@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { SubjectDraft } from '../types';
+import { useTranslation } from '../i18n/context';
 import { cx } from '../utils/format';
 import { Button } from './ui/Button';
 import { ArrowDownIcon, ArrowUpIcon, PlusIcon, XIcon } from './ui/Icons';
@@ -18,6 +19,7 @@ interface SubjectEditorProps {
 }
 
 export function SubjectEditor({ subjects, errors, markCounts, onChange, onAdd, onRequestRemove, focusKey }: SubjectEditorProps) {
+  const { t } = useTranslation();
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   useEffect(() => {
@@ -43,7 +45,7 @@ export function SubjectEditor({ subjects, errors, markCounts, onChange, onAdd, o
     <div className="space-y-3">
       {subjects.length === 0 && (
         <p className="rounded-lg border border-dashed border-slate-300 px-4 py-6 text-center text-sm text-slate-500">
-          No subjects yet. Add the subjects taught in this class.
+          {t('class.noSubjectsText')}
         </p>
       )}
 
@@ -60,7 +62,7 @@ export function SubjectEditor({ subjects, errors, markCounts, onChange, onAdd, o
                 </span>
                 <div className="min-w-0 flex-1">
                   <label htmlFor={inputId} className="sr-only">
-                    Subject {index + 1} name
+                    {t('class.subjectIndex', { index: index + 1 })}
                   </label>
                   <input
                     id={inputId}
@@ -69,7 +71,7 @@ export function SubjectEditor({ subjects, errors, markCounts, onChange, onAdd, o
                     }}
                     className="field-input"
                     value={subject.name}
-                    placeholder="Subject name, e.g. Fiqh"
+                    placeholder={t('class.subjectPlaceholder')}
                     maxLength={100}
                     autoComplete="off"
                     aria-invalid={error ? true : undefined}
@@ -90,7 +92,7 @@ export function SubjectEditor({ subjects, errors, markCounts, onChange, onAdd, o
                   )}
                   {!error && count > 0 && (
                     <p id={`${inputId}-count`} className="mt-1 text-xs text-slate-500">
-                      Marks entered for {count} student{count === 1 ? '' : 's'}
+                      {t('class.marksEnteredCount', { count })}
                     </p>
                   )}
                 </div>
@@ -131,12 +133,12 @@ export function SubjectEditor({ subjects, errors, markCounts, onChange, onAdd, o
       </ol>
 
       <Button variant="secondary" onClick={() => onAdd()} icon={<PlusIcon />} fullWidth id="add-subject-button">
-        Add Subject
+        {t('class.addSubject')}
       </Button>
 
       {suggestions.length > 0 && (
         <div>
-          <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-400">Quick add</p>
+          <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-400">{t('class.quickAdd')}</p>
           <div className="flex flex-wrap gap-2">
             {suggestions.map((name) => (
               <button

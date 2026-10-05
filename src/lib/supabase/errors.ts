@@ -1,6 +1,5 @@
 /**
  * Convert Supabase / network errors into friendly messages for teachers.
- * Raw details are logged to the console for developers only.
  */
 
 interface ErrorLike {
@@ -22,50 +21,45 @@ function asErrorLike(error: unknown): ErrorLike {
   return { message: String(error) };
 }
 
-export function friendlyErrorMessage(error: unknown, fallback = 'Something went wrong. Please try again.'): string {
+export function friendlyErrorMessage(
+  error: unknown,
+  fallback?: string,
+  t?: (key: string) => string,
+): string {
   if (error instanceof AppError) return error.message;
 
   const e = asErrorLike(error);
   const message = e.message ?? '';
   const text = `${message} ${e.details ?? ''}`;
 
+  const translate = (key: string, defaultText: string) => (t ? t(key) : defaultText);
+
   if (message === 'SUPABASE_NOT_CONFIGURED') {
-    return 'The database is not configured. Ask the administrator to set the Supabase environment variables.';
+    return translate('errors.supabaseNotConfigured', 'The database is not configured. Set Supabase environment variables.');
   }
   if (/Failed to fetch|NetworkError|Load failed|fetch failed|ERR_NETWORK|network/i.test(message)) {
-    return 'Cannot reach the database. Please check your internet connection and try again.';
+    return translate('errors.networkError', 'Cannot reach the database. Please check your internet connection and try again.');
   }
 
   switch (e.code) {
     case '23505':
-      if (text.includes('students_class_roll_unique')) {
-        return 'This roll number is already used in this class. Please choose a different roll number.';
+      if (text.includes('students_exam_category_roll_unique') || text.includes('students_class_roll_unique')) {
+        return translate('validation.duplicateRoll', 'This roll number already exists.');
       }
-      return 'This record already exists.';
+      return translate('errors.duplicateRecord', 'This record already exists.');
     case '23514':
-      if (/at least one subject/i.test(text)) return 'Please add at least one subject.';
-      return 'Some values are outside the allowed range. Please check the marks and try again.';
-    case '23503':
-      return 'This item no longer exists. Please refresh the page.';
-    case '23502':
-      return 'Some required information is missing.';
+      return translate('errors.outOfRange', 'Some values are outside the allowed range.');
     case 'P0002':
     case 'PGRST116':
-      return 'This item could not be found. It may have been deleted.';
-    case 'PGRST202':
-    case '42883':
-    case '42P01':
-    case 'PGRST205':
-      return 'The database is not set up yet. Ask the administrator to run supabase/schema.sql.';
+      return translate('errors.notFound', 'This item could not be found.');
     case '42501':
-      return 'The database refused this action (permission denied). Check the RLS policies in schema.sql.';
+      return translate('errors.permissionDenied', 'Database permission denied.');
     default:
-      return fallback;
+      return fallback || translate('errors.generic', 'Something went wrong. Please try again.');
   }
 }
 
-/** Log a developer-friendly error and return a teacher-friendly message. */
-export function handleError(error: unknown, fallback?: string): string {
+export function handleError(error: unknown, fallback?: string, t?: (key: string) => string): string {
   console.error('[MarkList]', error);
-  return friendlyErrorMessage(error, fallback);
+  return friendlyErrorMessage(error, fallback, t);
 }

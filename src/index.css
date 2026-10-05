@@ -4,7 +4,7 @@
 /* Design tokens                                                       */
 /* ------------------------------------------------------------------ */
 @theme {
-  --font-sans: "Inter", Arial, Helvetica, system-ui, -apple-system, sans-serif;
+  --font-sans: "Inter", "Noto Sans Malayalam", "Nirmala UI", Arial, Helvetica, system-ui, sans-serif;
   --font-serif: Georgia, "Times New Roman", Times, serif;
 
   /* One calm primary accent (deep blue) */
@@ -79,7 +79,7 @@
 /* Printable mark list                                                 */
 /* ------------------------------------------------------------------ */
 .print-sheet {
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: "Noto Sans Malayalam", "Inter", "Nirmala UI", Arial, Helvetica, sans-serif;
   color: #000;
   background: #fff;
 }

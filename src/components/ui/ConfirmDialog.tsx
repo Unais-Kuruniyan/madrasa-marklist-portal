@@ -13,6 +13,8 @@ interface ConfirmDialogProps {
   onCancel: () => void;
 }
 
+import { useTranslation } from '../../i18n/context';
+
 /**
  * Accessible confirmation dialog built on the native <dialog> element
  * (focus trapping, Esc to close and backdrop are handled by the browser).
@@ -21,13 +23,16 @@ export function ConfirmDialog({
   open,
   title,
   children,
-  confirmLabel = 'Confirm',
-  cancelLabel = 'Cancel',
+  confirmLabel,
+  cancelLabel,
   danger = false,
   loading = false,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
+  const { t } = useTranslation();
+  const actualConfirmLabel = confirmLabel ?? t('common.confirm');
+  const actualCancelLabel = cancelLabel ?? t('common.cancel');
   const ref = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
@@ -58,10 +63,10 @@ export function ConfirmDialog({
         {children && <div className="mt-2 space-y-2 text-sm text-slate-600">{children}</div>}
         <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <Button variant="secondary" onClick={onCancel} disabled={loading} id="confirm-dialog-cancel">
-            {cancelLabel}
+            {actualCancelLabel}
           </Button>
           <Button variant={danger ? 'danger' : 'primary'} onClick={onConfirm} loading={loading} id="confirm-dialog-confirm">
-            {confirmLabel}
+            {actualConfirmLabel}
           </Button>
         </div>
       </div>

@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import type { ClassDetail, Student, StudentCategory } from '../types';
+import { useTranslation } from '../i18n/context';
 import {
   calculateGrandTotal,
   calculateQuranHifzTotal,
@@ -36,6 +37,7 @@ function initialMarks(detail: ClassDetail, student: Student | null): MarkInputs 
 }
 
 export function StudentForm({ detail, editing, onSaved, onCancelEdit }: StudentFormProps) {
+  const { t } = useTranslation();
   const { config, students, examination } = detail;
   const isEdit = editing !== null;
   const subjectMax = (id: string) => detail.allSubjects.find((s) => s.id === id)?.maxMarks ?? 100;
@@ -74,7 +76,7 @@ export function StudentForm({ detail, editing, onSaved, onCancelEdit }: StudentF
 
   /* -------------------- validation -------------------- */
 
-  const rollResult = parseRollNumber(roll);
+  const rollResult = parseRollNumber(roll, t);
   const duplicate =
     rollResult.ok &&
     students.find(
@@ -84,17 +86,21 @@ export function StudentForm({ detail, editing, onSaved, onCancelEdit }: StudentF
   const rollError = !rollResult.ok
     ? rollResult.error
     : duplicate
-      ? `Roll ${rollResult.value} (${category === 'boys' ? 'Boys' : 'Girls'}) is already used by ${duplicate.studentName}`
+      ? t('validation.rollExists', {
+          roll: rollResult.value,
+          category: category === 'boys' ? t('student.boys') : t('student.girls'),
+          name: duplicate.studentName,
+        })
       : null;
 
-  const nameError = name.trim() ? null : 'Please enter the student name';
+  const nameError = name.trim() ? null : t('validation.enterStudentName');
 
   const parsedMarks = useMemo(() => {
     const result: Record<string, ReturnType<typeof parseMark>> = {};
-    for (const id of orderedMarkIds) result[id] = parseMark(marks[id] ?? '', subjectMax(id));
+    for (const id of orderedMarkIds) result[id] = parseMark(marks[id] ?? '', subjectMax(id), t);
     return result;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [marks, config]);
+  }, [marks, config, t]);
 
   const markErrors: Record<string, string | null> = {};
   for (const id of orderedMarkIds) {
@@ -207,7 +213,7 @@ export function StudentForm({ detail, editing, onSaved, onCancelEdit }: StudentF
       onSaved({ studentId, rollNumber: rollResult.value, name: studentName, category, wasEdit: isEdit });
       if (!isEdit) resetForNext(category, rollResult.value);
     } catch (err) {
-      setSaveError(handleError(err, isEdit ? 'Could not update student.' : 'Could not save student.'));
+      setSaveError(handleError(err, isEdit ? t('student.updateError') : t('student.saveError')));
     } finally {
       savingRef.current = false;
       setSaving(false);
@@ -253,7 +259,7 @@ export function StudentForm({ detail, editing, onSaved, onCancelEdit }: StudentF
           </p>
         ) : below ? (
           <p id={`${inputId}-below`} className="mt-1 text-xs text-fail-700">
-            Below {PASS_MARK}
+            {t('student.belowPass', { pass: PASS_MARK })}
           </p>
         ) : null}
       </div>
@@ -269,12 +275,12 @@ export function StudentForm({ detail, editing, onSaved, onCancelEdit }: StudentF
       onSubmit={(e) => void handleSubmit(e)}
       noValidate
       className="space-y-5"
-      aria-label={isEdit ? 'Edit student' : 'Add student'}
+      aria-label={isEdit ? t('student.editFormTitle') : t('student.addFormTitle')}
     >
       {/* Category (Boys / Girls Segmented Control) */}
       <div>
         <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-600">
-          Student Category (Boys / Girls)
+          {t('student.categoryLabel')}
         </label>
         <div className="grid grid-cols-2 gap-2 max-w-xs">
           <button
@@ -287,7 +293,7 @@ export function StudentForm({ detail, editing, onSaved, onCancelEdit }: StudentF
                 : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50',
             )}
           >
-            BOYS
+            {t('student.boys').toUpperCase()}
           </button>
           <button
             type="button"
@@ -299,7 +305,7 @@ export function StudentForm({ detail, editing, onSaved, onCancelEdit }: StudentF
                 : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50',
             )}
           >
-            GIRLS
+            {t('student.girls').toUpperCase()}
           </button>
         </div>
       </div>
@@ -307,7 +313,7 @@ export function StudentForm({ detail, editing, onSaved, onCancelEdit }: StudentF
       <div className="grid grid-cols-[6.5rem_1fr] gap-3">
         <div>
           <label htmlFor="student-roll" className="mb-1 block text-sm font-medium text-slate-700">
-            Roll No. ({category === 'boys' ? 'Boys' : 'Girls'})
+            {t('student.rollNumber')} ({category === 'boys' ? t('student.boys') : t('student.girls')})
           </label>
           <input
             id="student-roll"
@@ -327,7 +333,7 @@ export function StudentForm({ detail, editing, onSaved, onCancelEdit }: StudentF
         </div>
         <div>
           <label htmlFor="student-name" className="mb-1 block text-sm font-medium text-slate-700">
-            Student Name
+            {t('student.name')}
           </label>
           <input
             id="student-name"
@@ -338,7 +344,7 @@ export function StudentForm({ detail, editing, onSaved, onCancelEdit }: StudentF
             autoCapitalize="words"
             enterKeyHint="next"
             maxLength={150}
-            placeholder="Full name"
+            placeholder={t('student.fullNamePlaceholder')}
             value={name}
             aria-invalid={nameErr ? true : undefined}
             aria-describedby={nameErr ? 'student-name-error' : undefined}
@@ -375,9 +381,9 @@ export function StudentForm({ detail, editing, onSaved, onCancelEdit }: StudentF
           onChange={(e) => setIsAbsent(e.target.checked)}
         />
         <span>
-          <span className="font-medium text-slate-800">Absent / did not appear</span>
+          <span className="font-medium text-slate-800">{t('student.absentLabel')}</span>
           <span className="block text-xs text-slate-500">
-            Save without marks. Shown as "AB", not counted as appeared.
+            {t('student.absentHint')}
           </span>
         </span>
       </label>
@@ -387,7 +393,7 @@ export function StudentForm({ detail, editing, onSaved, onCancelEdit }: StudentF
           {config.normalSubjects.length > 0 && (
             <fieldset>
               <legend className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Subject Marks (out of 100, pass {PASS_MARK})
+                {t('student.marksLegend')}
               </legend>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
                 {config.normalSubjects.map((s) => markField(s.id, s.name, { evaluateIndividually: true }))}
@@ -398,14 +404,14 @@ export function StudentForm({ detail, editing, onSaved, onCancelEdit }: StudentF
           {config.includeQuranHifz && config.quranSubject && config.hifzSubject && (
             <fieldset className="rounded-xl border border-brand-100 bg-brand-50/40 p-3.5">
               <legend className="px-1 text-xs font-semibold uppercase tracking-wide text-brand-800">
-                Quran + Hifz (one subject)
+                {t('student.quranHifzLegend')}
               </legend>
               <div className="grid grid-cols-3 items-start gap-3">
-                {markField(config.quranSubject.id, 'Quran', { evaluateIndividually: false })}
-                {markField(config.hifzSubject.id, 'Hifz', { evaluateIndividually: false })}
+                {markField(config.quranSubject.id, t('student.quranLabel'), { evaluateIndividually: false })}
+                {markField(config.hifzSubject.id, t('student.hifzLabel'), { evaluateIndividually: false })}
                 <div>
                   <p className="mb-1 block text-sm font-medium text-slate-700" id="qh-total-label">
-                    Total
+                    {t('student.total')}
                   </p>
                   <output
                     aria-labelledby="qh-total-label"
@@ -430,18 +436,18 @@ export function StudentForm({ detail, editing, onSaved, onCancelEdit }: StudentF
           <div className="grid grid-cols-2 gap-3 rounded-xl bg-slate-900 p-4 text-white sm:grid-cols-3" aria-live="polite">
             <div>
               <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
-                {allEntered ? 'Grand Total' : 'Total so far'}
+                {allEntered ? t('student.grandTotal') : t('student.totalSoFar')}
               </p>
               <p className="mt-0.5 text-2xl font-bold tabular-nums">{allEntered ? formatMark(grandTotal) : formatMark(runningTotal)}</p>
             </div>
             {config.includeQuranHifz && (
               <div className="hidden sm:block">
-                <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Quran + Hifz</p>
+                <p className="text-xs font-medium uppercase tracking-wide text-slate-400">{t('student.quranHifzLabel')}</p>
                 <p className="mt-0.5 text-2xl font-bold tabular-nums">{formatMark(quranHifzTotal)}</p>
               </div>
             )}
             <div className="text-right sm:text-left">
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Result</p>
+              <p className="text-xs font-medium uppercase tracking-wide text-slate-400">{t('student.result')}</p>
               <div className="mt-1">
                 {result ? (
                   <span
@@ -450,10 +456,10 @@ export function StudentForm({ detail, editing, onSaved, onCancelEdit }: StudentF
                       result === 'P' ? 'bg-green-500/20 text-green-300' : 'bg-red-500/20 text-red-300',
                     )}
                   >
-                    {result} <span className="text-sm font-semibold">{result === 'P' ? 'Pass' : 'Fail'}</span>
+                    {result} <span className="text-sm font-semibold">{result === 'P' ? t('student.pass') : t('student.fail')}</span>
                   </span>
                 ) : (
-                  <span className="text-sm text-slate-400">Enter all marks</span>
+                  <span className="text-sm text-slate-400">{t('student.enterAllMarks')}</span>
                 )}
               </div>
             </div>
@@ -466,11 +472,17 @@ export function StudentForm({ detail, editing, onSaved, onCancelEdit }: StudentF
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
         {isEdit && (
           <Button variant="secondary" size="lg" onClick={onCancelEdit} disabled={saving} id="cancel-edit-student">
-            Cancel
+            {t('common.cancel')}
           </Button>
         )}
         <Button type="submit" size="lg" loading={saving} icon={<CheckIcon />} id="save-student-button" className="sm:min-w-48">
-          {saving ? (isEdit ? 'Updating marks...' : 'Saving student...') : isEdit ? 'Update Student' : 'Save & Next'}
+          {saving
+            ? isEdit
+              ? t('student.updatingMarks')
+              : t('student.savingStudent')
+            : isEdit
+              ? t('student.updateStudent')
+              : t('student.saveAndNext')}
         </Button>
       </div>
     </form>

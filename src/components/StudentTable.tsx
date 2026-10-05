@@ -1,5 +1,6 @@
 import { useMemo, useState, Fragment } from 'react';
 import type { ClassConfig, ClassSummary, Student } from '../types';
+import { useTranslation } from '../i18n/context';
 import { evaluateStudent, formatCombinedCount, isPassingMark, PASS_MARK } from '../lib/calculations/marks';
 import { cx, formatMark, formatPercent } from '../utils/format';
 import { EditIcon, TrashIcon } from './ui/Icons';
@@ -16,6 +17,7 @@ interface StudentTableProps {
 type Filter = 'all' | 'P' | 'F' | 'absent' | 'boys' | 'girls';
 
 export function StudentTable({ config, students, summary, onEditStudent, onDeleteStudent }: StudentTableProps) {
+  const { t } = useTranslation();
   const [filter, setFilter] = useState<Filter>('all');
   const [query, setQuery] = useState('');
 
@@ -101,15 +103,15 @@ export function StudentTable({ config, students, summary, onEditStudent, onDelet
       </td>
       <td className="px-3 py-3 text-xs text-slate-500">
         {result.status === 'absent' ? (
-          <span className="italic text-slate-400">Absent</span>
+          <span className="italic text-slate-400">{t('student.absentLabel')}</span>
         ) : result.status === 'incomplete' ? (
-          <span className="text-amber-700">Incomplete marks</span>
+          <span className="text-amber-700">{t('studentTable.incompleteMarks')}</span>
         ) : result.result === 'F' && result.failedSubjects.length > 0 ? (
           <span className="text-fail-700 font-medium">
-            Needs min {PASS_MARK} in {result.failedSubjects.join(', ')}
+            {t('studentTable.needsMin', { pass: PASS_MARK, subjects: result.failedSubjects.join(', ') })}
           </span>
         ) : (
-          <span className="text-pass-700 font-medium">Pass</span>
+          <span className="text-pass-700 font-medium">{t('student.pass')}</span>
         )}
       </td>
       <td className="px-3 py-3 text-right no-print whitespace-nowrap">
@@ -118,7 +120,7 @@ export function StudentTable({ config, students, summary, onEditStudent, onDelet
             type="button"
             onClick={() => onEditStudent(student)}
             className="rounded p-1.5 text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-            title={`Edit ${student.studentName}`}
+            title={`${t('common.edit')} ${student.studentName}`}
           >
             <EditIcon className="size-4" />
           </button>
@@ -126,7 +128,7 @@ export function StudentTable({ config, students, summary, onEditStudent, onDelet
             type="button"
             onClick={() => onDeleteStudent(student)}
             className="rounded p-1.5 text-fail-700 hover:bg-fail-50 hover:text-red-800"
-            title={`Delete ${student.studentName}`}
+            title={`${t('common.delete')} ${student.studentName}`}
           >
             <TrashIcon className="size-4" />
           </button>
@@ -140,15 +142,15 @@ export function StudentTable({ config, students, summary, onEditStudent, onDelet
       {/* Search & Filter Controls */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-wrap items-center gap-1.5 text-sm">
-          <span className="mr-1 font-medium text-slate-500">Show:</span>
+          <span className="mr-1 font-medium text-slate-500">{t('studentTable.show')}</span>
           {(
             [
-              { key: 'all', label: `All (${students.length})` },
-              { key: 'boys', label: `Boys (${summary.totalBoys})` },
-              { key: 'girls', label: `Girls (${summary.totalGirls})` },
-              { key: 'P', label: `Passed (${summary.totalPassed})` },
-              { key: 'F', label: `Failed (${summary.totalFailed})` },
-              { key: 'absent', label: `Absent` },
+              { key: 'all', label: t('studentTable.allWithCount', { count: students.length }) },
+              { key: 'boys', label: t('studentTable.boysWithCount', { count: summary.totalBoys }) },
+              { key: 'girls', label: t('studentTable.girlsWithCount', { count: summary.totalGirls }) },
+              { key: 'P', label: t('studentTable.passedWithCount', { count: summary.totalPassed }) },
+              { key: 'F', label: t('studentTable.failedWithCount', { count: summary.totalFailed }) },
+              { key: 'absent', label: t('studentTable.absentFilter') },
             ] as const
           ).map((f) => (
             <button
@@ -172,7 +174,7 @@ export function StudentTable({ config, students, summary, onEditStudent, onDelet
             <input
               type="search"
               className="field-input py-2 text-sm"
-              placeholder="Search by name or roll..."
+              placeholder={t('studentTable.searchPlaceholder')}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
@@ -183,14 +185,14 @@ export function StudentTable({ config, students, summary, onEditStudent, onDelet
       {/* Table with Boys and Girls Section Headers */}
       <div className="card overflow-hidden">
         <div className="print-scroll overflow-x-auto">
-          <table className="w-full text-left text-sm" aria-label="Student mark list">
+          <table className="w-full text-left text-sm" aria-label={t('class.openMarkList')}>
             <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wider text-slate-600 font-semibold">
               <tr>
                 <th scope="col" className="px-3 py-3 text-center w-16">
-                  Roll No
+                  {t('student.rollNumber')}
                 </th>
                 <th scope="col" className="px-4 py-3 min-w-[140px]">
-                  Student Name
+                  {t('student.name')}
                 </th>
                 {config.normalSubjects.map((s) => (
                   <th key={s.id} scope="col" className="px-3 py-3 text-center min-w-[80px]">
@@ -200,27 +202,27 @@ export function StudentTable({ config, students, summary, onEditStudent, onDelet
                 {withQH && (
                   <>
                     <th scope="col" className="px-3 py-3 text-center bg-brand-50/60 text-brand-900 border-l border-brand-100 min-w-[70px]">
-                      Quran
+                      {t('student.quranLabel')}
                     </th>
                     <th scope="col" className="px-3 py-3 text-center bg-brand-50/60 text-brand-900 min-w-[70px]">
-                      Hifz
+                      {t('student.hifzLabel')}
                     </th>
                     <th scope="col" className="px-3 py-3 text-center bg-brand-100/70 text-brand-900 font-bold border-r border-brand-200 min-w-[90px]">
-                      Quran + Hifz
+                      {t('student.quranHifzLabel')}
                     </th>
                   </>
                 )}
                 <th scope="col" className="px-3 py-3 text-center font-bold text-slate-900 min-w-[90px]">
-                  Grand Total
+                  {t('results.grandTotal')}
                 </th>
                 <th scope="col" className="px-3 py-3 text-center min-w-[75px]">
-                  Result
+                  {t('results.result')}
                 </th>
                 <th scope="col" className="px-3 py-3 text-center min-w-[120px] max-w-[200px]">
-                  Remarks
+                  {t('studentTable.remarks')}
                 </th>
                 <th scope="col" className="px-3 py-3 text-right no-print min-w-[80px]">
-                  Actions
+                  {t('common.actions')}
                 </th>
               </tr>
             </thead>
@@ -228,7 +230,7 @@ export function StudentTable({ config, students, summary, onEditStudent, onDelet
               {filtered.length === 0 ? (
                 <tr>
                   <td colSpan={colSpanCount} className="px-4 py-8 text-center text-slate-500">
-                    {students.length === 0 ? 'No students entered yet.' : 'No student matches the search or filter.'}
+                    {students.length === 0 ? t('studentTable.emptyList') : t('studentTable.noMatches')}
                   </td>
                 </tr>
               ) : (
@@ -238,7 +240,7 @@ export function StudentTable({ config, students, summary, onEditStudent, onDelet
                     <Fragment>
                       <tr className="bg-slate-100/90 font-bold text-slate-800 text-xs uppercase tracking-wider">
                         <td colSpan={colSpanCount} className="px-4 py-2 border-y border-slate-200">
-                          ── BOYS ({boysGroup.length}) ──
+                          ── {t('student.boys').toUpperCase()} ({boysGroup.length}) ──
                         </td>
                       </tr>
                       {boysGroup.map(({ student, result }) => renderStudentRow(student, result))}
@@ -250,7 +252,7 @@ export function StudentTable({ config, students, summary, onEditStudent, onDelet
                     <Fragment>
                       <tr className="bg-pink-50/90 font-bold text-pink-900 text-xs uppercase tracking-wider">
                         <td colSpan={colSpanCount} className="px-4 py-2 border-y border-pink-200">
-                          ── GIRLS ({girlsGroup.length}) ──
+                          ── {t('student.girls').toUpperCase()} ({girlsGroup.length}) ──
                         </td>
                       </tr>
                       {girlsGroup.map(({ student, result }) => renderStudentRow(student, result))}
@@ -266,35 +268,35 @@ export function StudentTable({ config, students, summary, onEditStudent, onDelet
       {/* Summary Statistics Card formatted mathematically as: Boys + Girls = Total */}
       <div className="card p-4 sm:p-5 bg-slate-900 text-white shadow-md">
         <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-3">
-          Summary Statistics
+          {t('results.summary')}
         </h3>
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 text-center sm:text-left">
           <div>
-            <p className="text-xs text-slate-400 font-medium">Total Participants</p>
+            <p className="text-xs text-slate-400 font-medium">{t('results.totalParticipants')}</p>
             <p className="text-xl font-bold tabular-nums mt-0.5">
               {formatCombinedCount(summary.totalBoys, summary.totalGirls, summary.totalParticipants)}
             </p>
           </div>
           <div>
-            <p className="text-xs text-slate-400 font-medium">Appeared</p>
+            <p className="text-xs text-slate-400 font-medium">{t('results.appeared')}</p>
             <p className="text-xl font-bold tabular-nums mt-0.5">
               {formatCombinedCount(summary.appearedBoys, summary.appearedGirls, summary.totalAppeared)}
             </p>
           </div>
           <div>
-            <p className="text-xs text-green-400 font-medium">Passed</p>
+            <p className="text-xs text-green-400 font-medium">{t('results.passed')}</p>
             <p className="text-xl font-bold text-green-300 tabular-nums mt-0.5">
               {formatCombinedCount(summary.passedBoys, summary.passedGirls, summary.totalPassed)}
             </p>
           </div>
           <div>
-            <p className="text-xs text-red-400 font-medium">Failed</p>
+            <p className="text-xs text-red-400 font-medium">{t('results.failed')}</p>
             <p className="text-xl font-bold text-red-300 tabular-nums mt-0.5">
               {formatCombinedCount(summary.failedBoys, summary.failedGirls, summary.totalFailed)}
             </p>
           </div>
           <div className="col-span-2 sm:col-span-1 border-t border-slate-800 sm:border-t-0 sm:border-l sm:border-slate-800 pt-3 sm:pt-0 sm:pl-4">
-            <p className="text-xs text-brand-300 font-medium">Pass Percentage</p>
+            <p className="text-xs text-brand-300 font-medium">{t('results.passPercentage')}</p>
             <p className="text-2xl font-extrabold text-white tabular-nums mt-0.5">
               {formatPercent(summary.passPercentage)}
             </p>
