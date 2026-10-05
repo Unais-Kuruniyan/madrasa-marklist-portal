@@ -61,6 +61,9 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
       template = getNestedValue(en as unknown as Record<string, unknown>, key);
     }
     if (!template) {
+      if (import.meta.env.DEV) {
+        console.warn(`[i18n] Missing translation key: "${key}" for language: "${language}"`);
+      }
       return key;
     }
 
