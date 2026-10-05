@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { useAsyncData } from '../hooks/useAsyncData';
 import { paths } from '../hooks/useHashRoute';
+import { useTranslation } from '../i18n/context';
 import { calculateSummary, evaluateStudent } from '../lib/calculations/marks';
 import { deleteStudent, getClassDetail, saveExamination } from '../lib/supabase/api';
 import { handleError } from '../lib/supabase/errors';
@@ -16,6 +17,7 @@ import { LoadingBlock } from '../components/ui/Spinner';
 import { TextField } from '../components/ui/TextField';
 
 export function ClassPage({ classId, examId }: { classId: string; examId?: string }) {
+  const { t } = useTranslation();
   const { data, loading, error, reload } = useAsyncData(() => getClassDetail(classId, examId), [classId, examId]);
 
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
@@ -58,19 +60,19 @@ export function ClassPage({ classId, examId }: { classId: string; examId?: strin
     return calculateSummary(data.schoolClass.totalStudents, evaluated);
   }, [data, evaluated]);
 
-  if (loading) return <LoadingBlock message="Loading mark list..." />;
+  if (loading) return <LoadingBlock message={t('common.loading')} />;
   if (error)
     return (
-      <Alert tone="error" title="Could not load class" action={<Button variant="secondary" size="sm" onClick={() => void reload()}>Try again</Button>}>
+      <Alert tone="error" title={t('dashboard.loadErrorTitle')} action={<Button variant="secondary" size="sm" onClick={() => void reload()}>{t('common.tryAgain')}</Button>}>
         {error}
       </Alert>
     );
   if (!data)
     return (
       <EmptyState
-        title="Class not found"
-        description="This class might have been deleted or the link is invalid."
-        action={<LinkButton href={paths.dashboard()}>Back to Dashboard</LinkButton>}
+        title={t('class.classNotFoundTitle')}
+        description={t('class.classNotFoundDesc')}
+        action={<LinkButton href={paths.dashboard()}>{t('dashboard.title')}</LinkButton>}
       />
     );
 
@@ -87,10 +89,11 @@ export function ClassPage({ classId, examId }: { classId: string; examId?: strin
   };
 
   const handleStudentSaved = ({ name, rollNumber, category, wasEdit }: { name: string; rollNumber: number; category: string; wasEdit: boolean }) => {
+    const categoryText = category === 'boys' ? t('student.boys') : t('student.girls');
     setSuccessMessage(
       wasEdit
-        ? `Updated Roll ${rollNumber} (${category === 'boys' ? 'Boys' : 'Girls'}) — ${name}`
-        : `Saved Roll ${rollNumber} (${category === 'boys' ? 'Boys' : 'Girls'}) — ${name}`,
+        ? t('student.updatedSuccess', { roll: rollNumber, category: categoryText, name })
+        : t('student.savedSuccess', { roll: rollNumber, category: categoryText, name }),
     );
     if (wasEdit) setEditingStudent(null);
     void reload();
@@ -104,10 +107,10 @@ export function ClassPage({ classId, examId }: { classId: string; examId?: strin
       await deleteStudent(studentToDelete.id);
       setStudentToDelete(null);
       if (editingStudent?.id === studentToDelete.id) setEditingStudent(null);
-      setSuccessMessage(`Deleted student ${studentToDelete.studentName}`);
+      setSuccessMessage(t('student.deletedSuccess', { name: studentToDelete.studentName }));
       await reload();
     } catch (err) {
-      setActionError(handleError(err, 'Could not delete student.'));
+      setActionError(handleError(err, t('student.deleteError')));
       setStudentToDelete(null);
     } finally {
       setDeleting(false);
@@ -124,7 +127,7 @@ export function ClassPage({ classId, examId }: { classId: string; examId?: strin
       setShowNewExamModal(false);
       window.location.hash = paths.classPage(schoolClass.id, createdExamId);
     } catch (err) {
-      setActionError(handleError(err, 'Could not create new examination.'));
+      setActionError(handleError(err, t('class.createExamError')));
     } finally {
       setSavingExam(false);
     }
@@ -139,14 +142,14 @@ export function ClassPage({ classId, examId }: { classId: string; examId?: strin
             href={paths.dashboard()}
             className="mb-2 inline-flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-slate-900"
           >
-            <ArrowLeftIcon className="size-3.5" /> All Classes
+            <ArrowLeftIcon className="size-3.5" /> {t('class.allClasses')}
           </a>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">{schoolClass.className}</h1>
           {schoolClass.institutionName && (
             <p className="text-sm font-medium text-slate-700">
               {schoolClass.institutionName}
               {schoolClass.institutionLocation ? `, ${schoolClass.institutionLocation}` : ''}
-              {schoolClass.rangeName ? ` | Range: ${schoolClass.rangeName}` : ''}
+              {schoolClass.rangeName ? ` | ${t('common.range')}: ${schoolClass.rangeName}` : ''}
             </p>
           )}
 
@@ -154,7 +157,7 @@ export function ClassPage({ classId, examId }: { classId: string; examId?: strin
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <div className="flex items-center gap-2">
               <label htmlFor="select-exam" className="text-xs font-bold uppercase text-slate-500">
-                Exam:
+                {t('class.examSelectLabel')}
               </label>
               <select
                 id="select-exam"
@@ -173,7 +176,7 @@ export function ClassPage({ classId, examId }: { classId: string; examId?: strin
             </div>
 
             <Button variant="secondary" size="sm" icon={<PlusIcon />} onClick={() => setShowNewExamModal(true)}>
-              New Exam
+              {t('class.newExamButton')}
             </Button>
           </div>
         </div>
@@ -186,10 +189,10 @@ export function ClassPage({ classId, examId }: { classId: string; examId?: strin
             icon={<PrintIcon />}
             id="print-marklist-btn"
           >
-            Print Mark List
+            {t('common.printMarkList')}
           </LinkButton>
           <LinkButton href={paths.editClass(schoolClass.id)} variant="secondary" size="md" icon={<EditIcon />} id="edit-class-btn">
-            Edit Class
+            {t('class.editClass')}
           </LinkButton>
         </div>
       </div>
@@ -203,17 +206,21 @@ export function ClassPage({ classId, examId }: { classId: string; examId?: strin
           <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
             {editingStudent ? (
               <>
-                <EditIcon className="size-5 text-brand-600" /> Editing Roll {editingStudent.rollNumber} ({editingStudent.category === 'boys' ? 'Boys' : 'Girls'}): {editingStudent.studentName}
+                <EditIcon className="size-5 text-brand-600" /> {t('class.editingStudentTitle', {
+                  roll: editingStudent.rollNumber,
+                  category: editingStudent.category === 'boys' ? t('student.boys') : t('student.girls'),
+                  name: editingStudent.studentName,
+                })}
               </>
             ) : (
               <>
-                <PlusIcon className="size-5 text-brand-600" /> Enter Student Marks ({examination.examName} — {examination.examYear})
+                <PlusIcon className="size-5 text-brand-600" /> {t('class.enterMarksTitle', { exam: examination.examName, year: examination.examYear })}
               </>
             )}
           </h2>
           {editingStudent && (
             <Button variant="ghost" size="sm" onClick={handleCancelEdit}>
-              Cancel Edit
+              {t('class.cancelEdit')}
             </Button>
           )}
         </div>
@@ -230,7 +237,7 @@ export function ClassPage({ classId, examId }: { classId: string; examId?: strin
       <section className="space-y-3" aria-labelledby="marklist-heading">
         <div className="flex items-center justify-between">
           <h2 id="marklist-heading" className="text-xl font-bold text-slate-900">
-            {examination.examName} — {examination.examYear} Mark List <span className="text-sm font-normal text-slate-500">({students.length} entered)</span>
+            {t('class.markListTitle', { exam: examination.examName, year: examination.examYear, count: students.length })}
           </h2>
         </div>
 
@@ -246,15 +253,19 @@ export function ClassPage({ classId, examId }: { classId: string; examId?: strin
       {/* Delete Confirmation Modal */}
       <ConfirmDialog
         open={studentToDelete !== null}
-        title={`Delete student "${studentToDelete?.studentName}"?`}
-        confirmLabel="Delete Student"
+        title={t('student.deleteConfirmTitle', { name: studentToDelete?.studentName ?? '' })}
+        confirmLabel={t('student.deleteConfirmButton')}
         danger
         loading={deleting}
         onCancel={() => setStudentToDelete(null)}
         onConfirm={() => void confirmDeleteStudent()}
       >
         <p>
-          This will permanently delete <strong>Roll {studentToDelete?.rollNumber} ({studentToDelete?.category === 'boys' ? 'Boys' : 'Girls'}) — {studentToDelete?.studentName}</strong> and all their entered marks for this examination.
+          {t('student.deleteConfirmBody', {
+            roll: studentToDelete?.rollNumber ?? 0,
+            category: studentToDelete?.category === 'boys' ? t('student.boys') : t('student.girls'),
+            name: studentToDelete?.studentName ?? '',
+          })}
         </p>
       </ConfirmDialog>
 
@@ -262,13 +273,13 @@ export function ClassPage({ classId, examId }: { classId: string; examId?: strin
       {showNewExamModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
           <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl space-y-4">
-            <h3 className="text-lg font-bold text-slate-900">Create New Examination</h3>
+            <h3 className="text-lg font-bold text-slate-900">{t('class.newExamModalTitle')}</h3>
             <p className="text-xs text-slate-500">
-              Create another examination (e.g. Annual Exam) under {schoolClass.className}. Previous exam results will be preserved!
+              {t('class.newExamModalDesc', { name: schoolClass.className })}
             </p>
 
             <TextField
-              label="Examination Name"
+              label={t('exam.name')}
               id="new-exam-name"
               value={newExamName}
               onChange={(e) => setNewExamName(e.target.value)}
@@ -276,7 +287,7 @@ export function ClassPage({ classId, examId }: { classId: string; examId?: strin
             />
 
             <TextField
-              label="Exam Year"
+              label={t('exam.year')}
               id="new-exam-year"
               value={newExamYear}
               onChange={(e) => setNewExamYear(e.target.value)}
@@ -286,10 +297,10 @@ export function ClassPage({ classId, examId }: { classId: string; examId?: strin
 
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="secondary" onClick={() => setShowNewExamModal(false)} disabled={savingExam}>
-                Cancel
+                {t('common.cancel')}
               </Button>
               <Button variant="primary" onClick={() => void handleCreateNewExam()} loading={savingExam}>
-                Create Exam
+                {t('class.createExamButton')}
               </Button>
             </div>
           </div>

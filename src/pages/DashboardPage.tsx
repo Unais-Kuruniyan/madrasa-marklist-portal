@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useAsyncData } from '../hooks/useAsyncData';
 import { navigate, paths } from '../hooks/useHashRoute';
+import { useTranslation } from '../i18n/context';
 import { deleteClass, listClasses } from '../lib/supabase/api';
 import { handleError } from '../lib/supabase/errors';
 import type { ClassListItem } from '../types';
@@ -13,6 +14,7 @@ import { PlusIcon, RefreshIcon, SearchIcon } from '../components/ui/Icons';
 import { Skeleton } from '../components/ui/Spinner';
 
 export function DashboardPage() {
+  const { t } = useTranslation();
   const { data, loading, error, reload, refreshing } = useAsyncData(listClasses, []);
   const [query, setQuery] = useState('');
   const [toDelete, setToDelete] = useState<ClassListItem | null>(null);
@@ -42,7 +44,7 @@ export function DashboardPage() {
       setToDelete(null);
       await reload();
     } catch (err) {
-      setActionError(handleError(err, 'Could not delete the class. Please try again.'));
+      setActionError(handleError(err, t('dashboard.deleteError')));
       setToDelete(null);
     } finally {
       setDeleting(false);
@@ -53,19 +55,19 @@ export function DashboardPage() {
     <div className="space-y-6">
       <section className="space-y-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">School Mark List Portal</h1>
-          <p className="mt-1 text-sm text-slate-500">Configure classes, manage student marks, and print official mark sheets.</p>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">{t('dashboard.title')}</h1>
+          <p className="mt-1 text-sm text-slate-500">{t('dashboard.subtitle')}</p>
         </div>
 
         <div className="grid gap-3 sm:grid-cols-[auto_1fr] sm:items-end">
           <LinkButton href={paths.newClass()} variant="primary" size="lg" icon={<PlusIcon />} id="create-class-button">
-            Create New Class
+            {t('dashboard.createNewClass')}
           </LinkButton>
 
           {classes.length > 0 && (
             <div className="sm:max-w-sm">
               <label htmlFor="select-class" className="mb-1.5 block text-sm font-medium text-slate-700">
-                Select existing class
+                {t('dashboard.selectExistingClass')}
               </label>
               <select
                 id="select-class"
@@ -73,7 +75,7 @@ export function DashboardPage() {
                 value=""
                 onChange={(e) => e.target.value && navigate(paths.classPage(e.target.value))}
               >
-                <option value="">Choose a class...</option>
+                <option value="">{t('dashboard.chooseClassPlaceholder')}</option>
                 {sortedForSelect.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.className}
@@ -91,19 +93,19 @@ export function DashboardPage() {
       <section aria-labelledby="classes-heading" className="space-y-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <h2 id="classes-heading" className="text-lg font-semibold text-slate-900">
-            Classes {classes.length > 0 && <span className="font-normal text-slate-400">({classes.length})</span>}
+            {t('dashboard.existingClasses')} {classes.length > 0 && <span className="font-normal text-slate-400">({classes.length})</span>}
           </h2>
           {classes.length > 0 && (
             <div className="relative sm:w-72">
               <label htmlFor="class-search" className="sr-only">
-                Search class
+                {t('dashboard.searchPlaceholder')}
               </label>
               <SearchIcon className="pointer-events-none absolute left-3 top-1/2 size-5 -translate-y-1/2 text-slate-400" />
               <input
                 id="class-search"
                 type="search"
                 className="field-input pl-10"
-                placeholder="Search class or location..."
+                placeholder={t('dashboard.searchPlaceholder')}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 autoComplete="off"
@@ -113,7 +115,7 @@ export function DashboardPage() {
         </div>
 
         {loading && (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3" role="status" aria-label="Loading classes">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3" role="status" aria-label={t('common.loading')}>
             {[0, 1, 2].map((i) => (
               <div key={i} className="card space-y-3 p-5">
                 <Skeleton className="h-6 w-2/3" />
@@ -128,10 +130,10 @@ export function DashboardPage() {
         {!loading && error && (
           <Alert
             tone="error"
-            title="Could not load classes"
+            title={t('dashboard.loadErrorTitle')}
             action={
               <Button variant="secondary" size="sm" onClick={() => void reload()} loading={refreshing} icon={<RefreshIcon className="size-4" />}>
-                Try again
+                {t('common.tryAgain')}
               </Button>
             }
           >
@@ -141,11 +143,11 @@ export function DashboardPage() {
 
         {!loading && !error && classes.length === 0 && (
           <EmptyState
-            title="No classes created yet"
-            description="Start by creating your first class. Define institution info, range, exam details, and subjects."
+            title={t('dashboard.noClassesTitle')}
+            description={t('dashboard.noClassesDescription')}
             action={
               <LinkButton href={paths.newClass()} variant="primary" icon={<PlusIcon />}>
-                Create your first class
+                {t('dashboard.createFirstClass')}
               </LinkButton>
             }
           />
@@ -153,11 +155,11 @@ export function DashboardPage() {
 
         {!loading && !error && classes.length > 0 && filtered.length === 0 && (
           <EmptyState
-            title="No matching classes"
-            description={<>No class matches "{query}".</>}
+            title={t('dashboard.noMatchingClassesTitle')}
+            description={t('dashboard.noMatchingClassesDescription', { query })}
             action={
               <Button variant="secondary" onClick={() => setQuery('')}>
-                Clear search
+                {t('dashboard.clearSearch')}
               </Button>
             }
           />
@@ -174,16 +176,14 @@ export function DashboardPage() {
 
       <ConfirmDialog
         open={toDelete !== null}
-        title={`Delete "${toDelete?.className ?? ''}"?`}
-        confirmLabel="Delete class"
+        title={t('dashboard.deleteConfirmTitle', { name: toDelete?.className ?? '' })}
+        confirmLabel={t('dashboard.deleteConfirmButton')}
         danger
         loading={deleting}
         onCancel={() => setToDelete(null)}
         onConfirm={() => void confirmDelete()}
       >
-        <p>
-          This will <strong>permanently delete</strong> the class, all associated examinations, subjects, students and marks.
-        </p>
+        <p>{t('dashboard.deleteConfirmBody')}</p>
       </ConfirmDialog>
     </div>
   );

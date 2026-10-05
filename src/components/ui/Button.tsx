@@ -68,6 +68,7 @@ interface LinkButtonProps {
   children: ReactNode;
   id?: string;
   'aria-label'?: string;
+  title?: string;
 }
 
 /** Anchor styled as a button (for navigation). */

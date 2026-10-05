@@ -1,7 +1,11 @@
 import type { ReactNode } from 'react';
 import { paths } from '../hooks/useHashRoute';
+import { useTranslation } from '../i18n/context';
+import { LanguageToggle } from '../components/ui/LanguageToggle';
 
 export function AppLayout({ children }: { children: ReactNode }) {
+  const { t } = useTranslation();
+
   return (
     <div className="flex min-h-dvh flex-col">
       <a
@@ -12,10 +16,10 @@ export function AppLayout({ children }: { children: ReactNode }) {
           document.getElementById('main')?.focus();
         }}
       >
-        Skip to content
+        {t('nav.skipToContent')}
       </a>
       <header className="no-print sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/85">
-        <div className="mx-auto flex h-14 max-w-6xl items-center px-4 sm:px-6">
+        <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4 sm:px-6">
           <a href={paths.dashboard()} className="flex items-center gap-2.5 rounded-md font-semibold text-slate-900" id="nav-home">
             <span className="flex size-8 items-center justify-center rounded-lg bg-brand-800 text-white">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-4.5" aria-hidden="true">
@@ -24,15 +28,17 @@ export function AppLayout({ children }: { children: ReactNode }) {
                 <path d="M9 13h6M9 17h4" />
               </svg>
             </span>
-            <span>School Mark List</span>
+            <span className="text-base sm:text-lg">{t('common.appName')}</span>
           </a>
+
+          <LanguageToggle />
         </div>
       </header>
       <main id="main" tabIndex={-1} className="mx-auto w-full max-w-6xl flex-1 px-4 py-5 outline-none sm:px-6 sm:py-8">
         {children}
       </main>
       <footer className="no-print border-t border-slate-200 py-4 text-center text-xs text-slate-400">
-        Class Mark List Portal
+        {t('common.portalName')}
       </footer>
     </div>
   );
