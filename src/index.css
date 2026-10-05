@@ -1,0 +1,141 @@
+@import "tailwindcss";
+
+/* ------------------------------------------------------------------ */
+/* Design tokens                                                       */
+/* ------------------------------------------------------------------ */
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-serif: Georgia, "Times New Roman", Times, serif;
+
+  /* One calm primary accent (deep blue) */
+  --color-brand-50: #eff4ff;
+  --color-brand-100: #dbe6fe;
+  --color-brand-200: #bfd3fe;
+  --color-brand-500: #3b67d6;
+  --color-brand-600: #2a50b8;
+  --color-brand-700: #223f94;
+  --color-brand-800: #1e3a8a;
+  --color-brand-900: #172b63;
+
+  /* Results */
+  --color-pass-50: #ecfdf3;
+  --color-pass-600: #15803d;
+  --color-pass-700: #166534;
+  --color-fail-50: #fef2f2;
+  --color-fail-600: #dc2626;
+  --color-fail-700: #b91c1c;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    @apply bg-slate-50 font-sans text-slate-800 antialiased;
+  }
+  /* Hide number input spinners (we use inputmode=decimal text inputs anyway) */
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-brand-500);
+    outline-offset: 2px;
+  }
+  dialog::backdrop {
+    background: rgb(15 23 42 / 0.45);
+  }
+}
+
+@layer components {
+  .field-input {
+    @apply block w-full rounded-lg border border-slate-300 bg-white px-3.5 py-3 text-base text-slate-900
+      placeholder:text-slate-400 shadow-xs transition-colors
+      focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-200
+      disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500;
+  }
+  .field-input[aria-invalid="true"] {
+    @apply border-fail-600 ring-2 ring-red-100;
+  }
+  .card {
+    @apply rounded-xl border border-slate-200 bg-white shadow-xs;
+  }
+}
+
+/* Subtle entrance animation */
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in {
+  animation: fade-in-up 0.18s ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in { animation: none; }
+}
+
+/* ------------------------------------------------------------------ */
+/* Printable mark list                                                 */
+/* ------------------------------------------------------------------ */
+.print-sheet {
+  font-family: var(--font-serif);
+  color: #000;
+  background: #fff;
+}
+.print-sheet table {
+  border-collapse: collapse;
+  width: 100%;
+}
+.print-sheet th,
+.print-sheet td {
+  border: 1px solid #000;
+  padding: 4px 6px;
+  font-size: 11.5px;
+  line-height: 1.25;
+}
+.print-sheet th {
+  background: #f1f1f1;
+  font-weight: 700;
+  text-align: center;
+  vertical-align: middle;
+}
+.print-sheet tbody tr {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+.print-sheet thead {
+  display: table-header-group; /* repeat header on each printed page */
+}
+
+/* On screen, show the sheet as a paper preview */
+@media screen {
+  .print-paper {
+    margin: 0 auto;
+    box-shadow: 0 1px 3px rgb(0 0 0 / 0.08), 0 8px 24px rgb(0 0 0 / 0.06);
+  }
+  .print-paper--portrait { max-width: 210mm; min-height: 297mm; padding: 14mm 12mm; }
+  .print-paper--landscape { max-width: 297mm; min-height: 210mm; padding: 12mm 12mm; }
+}
+
+@media print {
+  html, body {
+    background: #fff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .print-paper {
+    box-shadow: none !important;
+    padding: 0 !important;
+    max-width: none !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+  }
+  .print-scroll {
+    overflow: visible !important;
+  }
+}

@@ -1,0 +1,10 @@
+node_modules
+dist
+.vercel
+*.log
+.DS_Store
+
+# Environment files (keep .env.example committed)
+.env
+.env.*
+!.env.example
