@@ -27,14 +27,18 @@ export default function App() {
   }
 
   // The print page has its own minimal layout.
-  if (route.name === 'print') return <PrintPage key={route.id} classId={route.id} />;
+  if (route.name === 'print') {
+    return <PrintPage key={`${route.id}-${route.examId ?? 'default'}`} classId={route.id} examId={route.examId} />;
+  }
 
   return (
     <AppLayout>
       {route.name === 'dashboard' && <DashboardPage />}
       {route.name === 'new-class' && <ClassFormPage key="new" classId={null} />}
       {route.name === 'edit-class' && <ClassFormPage key={`edit-${route.id}`} classId={route.id} />}
-      {route.name === 'class' && <ClassPage key={route.id} classId={route.id} />}
+      {route.name === 'class' && (
+        <ClassPage key={`${route.id}-${route.examId ?? 'default'}`} classId={route.id} examId={route.examId} />
+      )}
       {route.name === 'not-found' && (
         <EmptyState
           title="Page not found"

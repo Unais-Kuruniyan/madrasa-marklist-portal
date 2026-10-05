@@ -9,6 +9,7 @@ interface ClassCardProps {
 }
 
 export function ClassCard({ item, onDelete }: ClassCardProps) {
+  const latestExam = item.examinations[0];
   const progress = item.totalStudents > 0 ? Math.min(100, Math.round((item.studentCount / item.totalStudents) * 100)) : 0;
 
   return (
@@ -16,13 +17,19 @@ export function ClassCard({ item, onDelete }: ClassCardProps) {
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 id={`class-${item.id}-title`} className="break-words text-lg font-semibold text-slate-900">
-            <a href={paths.classPage(item.id)} className="rounded hover:text-brand-700">
+            <a href={paths.classPage(item.id, latestExam?.id)} className="rounded hover:text-brand-700">
               {item.className}
             </a>
           </h3>
           {item.institutionName && (
-            <p className="mt-0.5 truncate text-sm text-slate-500" title={item.institutionName}>
+            <p className="mt-0.5 truncate text-xs font-medium text-slate-500" title={item.institutionName}>
               {item.institutionName}
+              {item.rangeName ? ` (${item.rangeName})` : ''}
+            </p>
+          )}
+          {latestExam && (
+            <p className="mt-1 text-xs font-bold text-brand-700">
+              {latestExam.examName} — {latestExam.examYear}
             </p>
           )}
         </div>
@@ -43,7 +50,7 @@ export function ClassCard({ item, onDelete }: ClassCardProps) {
           <div>
             <dt className="sr-only">Students entered</dt>
             <dd>
-              <span className="font-semibold text-slate-900">{item.studentCount}</span> / {item.totalStudents} students
+              <span className="font-semibold text-slate-900">{item.studentCount}</span> / {item.totalStudents} entered
             </dd>
           </div>
         </div>
@@ -73,10 +80,10 @@ export function ClassCard({ item, onDelete }: ClassCardProps) {
       </div>
 
       <div className="mt-5 grid grid-cols-[1fr_auto_auto_auto] gap-2">
-        <LinkButton href={paths.classPage(item.id)} variant="primary" id={`open-class-${item.id}`}>
+        <LinkButton href={paths.classPage(item.id, latestExam?.id)} variant="primary" id={`open-class-${item.id}`}>
           Open Mark List
         </LinkButton>
-        <LinkButton href={paths.print(item.id)} variant="secondary" aria-label={`Print ${item.className}`} id={`print-class-${item.id}`} className="px-3">
+        <LinkButton href={paths.print(item.id, latestExam?.id)} variant="secondary" aria-label={`Print ${item.className}`} id={`print-class-${item.id}`} className="px-3">
           <PrintIcon />
         </LinkButton>
         <LinkButton href={paths.editClass(item.id)} variant="secondary" aria-label={`Edit ${item.className}`} id={`edit-class-${item.id}`} className="px-3">

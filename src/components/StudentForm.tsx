@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
-import type { ClassDetail, Student } from '../types';
+import type { ClassDetail, Student, StudentCategory } from '../types';
 import {
   calculateGrandTotal,
   calculateQuranHifzTotal,
@@ -19,9 +19,8 @@ import { CheckIcon } from './ui/Icons';
 
 interface StudentFormProps {
   detail: ClassDetail;
-  /** Student being edited, or null to add a new student. */
   editing: Student | null;
-  onSaved: (info: { studentId: string; rollNumber: number; name: string; wasEdit: boolean }) => void;
+  onSaved: (info: { studentId: string; rollNumber: number; name: string; category: StudentCategory; wasEdit: boolean }) => void;
   onCancelEdit: () => void;
 }
 
@@ -37,13 +36,20 @@ function initialMarks(detail: ClassDetail, student: Student | null): MarkInputs 
 }
 
 export function StudentForm({ detail, editing, onSaved, onCancelEdit }: StudentFormProps) {
-  const { config, students, schoolClass } = detail;
+  const { config, students, examination } = detail;
   const isEdit = editing !== null;
   const subjectMax = (id: string) => detail.allSubjects.find((s) => s.id === id)?.maxMarks ?? 100;
 
+  const [category, setCategory] = useState<StudentCategory>(editing?.category ?? 'boys');
+
+  // Compute highest roll numbers for auto-suggestion per category
+  const getCategoryRolls = (cat: StudentCategory) =>
+    students.filter((s) => s.category === cat && s.id !== (editing ? editing.id : undefined)).map((s) => s.rollNumber);
+
   const [roll, setRoll] = useState(() =>
-    editing ? String(editing.rollNumber) : String(suggestNextRollNumber(students.map((s) => s.rollNumber))),
+    editing ? String(editing.rollNumber) : String(suggestNextRollNumber(getCategoryRolls('boys'))),
   );
+
   const [name, setName] = useState(editing?.studentName ?? '');
   const [isAbsent, setIsAbsent] = useState(() => (editing ? Object.keys(editing.marks).length === 0 : false));
   const [marks, setMarks] = useState<MarkInputs>(() => initialMarks(detail, editing));
@@ -57,16 +63,30 @@ export function StudentForm({ detail, editing, onSaved, onCancelEdit }: StudentF
 
   const orderedMarkIds = requiredSubjectIds(config);
 
+  // Handle category change -> update suggested roll number automatically
+  const handleCategoryChange = (newCat: StudentCategory) => {
+    setCategory(newCat);
+    if (!isEdit) {
+      const nextRoll = suggestNextRollNumber(getCategoryRolls(newCat));
+      setRoll(String(nextRoll));
+    }
+  };
+
   /* -------------------- validation -------------------- */
 
   const rollResult = parseRollNumber(roll);
   const duplicate =
-    rollResult.ok && students.find((s) => s.rollNumber === rollResult.value && s.id !== editing?.id);
+    rollResult.ok &&
+    students.find(
+      (s) => s.category === category && s.rollNumber === rollResult.value && s.id !== editing?.id,
+    );
+
   const rollError = !rollResult.ok
     ? rollResult.error
     : duplicate
-      ? `Roll ${rollResult.value} is already used by ${duplicate.studentName}`
+      ? `Roll ${rollResult.value} (${category === 'boys' ? 'Boys' : 'Girls'}) is already used by ${duplicate.studentName}`
       : null;
+
   const nameError = name.trim() ? null : 'Please enter the student name';
 
   const parsedMarks = useMemo(() => {
@@ -85,7 +105,6 @@ export function StudentForm({ detail, editing, onSaved, onCancelEdit }: StudentF
   const showError = (field: string, error: string | null) => {
     if (!error) return null;
     const raw = field === 'roll' ? roll : field === 'name' ? name : marks[field] ?? '';
-    // Show immediately for clearly invalid typed values; show "required" only after blur / submit.
     if (submitted || touched[field] || raw.trim() !== '') return error;
     return null;
   };
@@ -107,11 +126,9 @@ export function StudentForm({ detail, editing, onSaved, onCancelEdit }: StudentF
       : null;
   const allEntered =
     normalValues.every((v) => v !== null) && (!config.includeQuranHifz || quranHifzTotal !== null);
-  const enteredCount =
-    normalValues.filter((v) => v !== null).length +
-    (config.includeQuranHifz ? [quranValue, hifzValue].filter((v) => v !== null).length : 0);
   const runningTotal = round2(
-    normalValues.reduce<number>((a, v) => a + (v ?? 0), 0) + (config.includeQuranHifz ? (quranValue ?? 0) + (hifzValue ?? 0) : 0),
+    normalValues.reduce<number>((a, v) => a + (v ?? 0), 0) +
+      (config.includeQuranHifz ? (quranValue ?? 0) + (hifzValue ?? 0) : 0),
   );
   const grandTotal = allEntered ? calculateGrandTotal(normalValues as number[], quranHifzTotal) : null;
   const result = allEntered ? calculateResult(normalValues as number[], quranHifzTotal) : null;
@@ -140,8 +157,11 @@ export function StudentForm({ detail, editing, onSaved, onCancelEdit }: StudentF
 
   /* -------------------- submit -------------------- */
 
-  function resetForNext(savedRoll: number) {
-    const rolls = [...students.filter((s) => s.id !== editing?.id).map((s) => s.rollNumber), savedRoll];
+  function resetForNext(savedCategory: StudentCategory, savedRoll: number) {
+    const rolls = [
+      ...students.filter((s) => s.category === savedCategory && s.id !== editing?.id).map((s) => s.rollNumber),
+      savedRoll,
+    ];
     setRoll(String(suggestNextRollNumber(rolls)));
     setName('');
     setIsAbsent(false);
@@ -153,7 +173,7 @@ export function StudentForm({ detail, editing, onSaved, onCancelEdit }: StudentF
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    if (savingRef.current) return; // guard against double submission
+    if (savingRef.current) return;
     setSubmitted(true);
     setSaveError(null);
 
@@ -170,8 +190,9 @@ export function StudentForm({ detail, editing, onSaved, onCancelEdit }: StudentF
     try {
       const studentName = name.trim();
       const studentId = await saveStudent({
-        classId: schoolClass.id,
+        examId: examination.id,
         studentId: editing?.id ?? null,
+        category,
         rollNumber: rollResult.value,
         studentName,
         isAbsent,
@@ -179,14 +200,14 @@ export function StudentForm({ detail, editing, onSaved, onCancelEdit }: StudentF
           ? []
           : orderedMarkIds.map((id) => {
               const r = parsedMarks[id];
-              if (!r.ok) throw new Error('Invalid mark'); // unreachable: validated above
+              if (!r.ok) throw new Error('Invalid mark');
               return { subjectId: id, marks: r.value };
             }),
       });
-      onSaved({ studentId, rollNumber: rollResult.value, name: studentName, wasEdit: isEdit });
-      if (!isEdit) resetForNext(rollResult.value);
+      onSaved({ studentId, rollNumber: rollResult.value, name: studentName, category, wasEdit: isEdit });
+      if (!isEdit) resetForNext(category, rollResult.value);
     } catch (err) {
-      setSaveError(handleError(err, isEdit ? 'Could not update the student.' : 'Could not save the student.'));
+      setSaveError(handleError(err, isEdit ? 'Could not update student.' : 'Could not save student.'));
     } finally {
       savingRef.current = false;
       setSaving(false);
@@ -208,7 +229,10 @@ export function StudentForm({ detail, editing, onSaved, onCancelEdit }: StudentF
         <input
           id={inputId}
           data-entry
-          className={cx('field-input text-center text-lg font-semibold tabular-nums', below && 'border-red-300 text-fail-700')}
+          className={cx(
+            'field-input text-center text-lg font-semibold tabular-nums',
+            below && 'border-red-300 text-fail-700',
+          )}
           inputMode="decimal"
           autoComplete="off"
           enterKeyHint="next"
@@ -240,11 +264,50 @@ export function StudentForm({ detail, editing, onSaved, onCancelEdit }: StudentF
   const nameErr = showError('name', nameError);
 
   return (
-    <form ref={formRef} onSubmit={(e) => void handleSubmit(e)} noValidate className="space-y-5" aria-label={isEdit ? 'Edit student' : 'Add student'}>
+    <form
+      ref={formRef}
+      onSubmit={(e) => void handleSubmit(e)}
+      noValidate
+      className="space-y-5"
+      aria-label={isEdit ? 'Edit student' : 'Add student'}
+    >
+      {/* Category (Boys / Girls Segmented Control) */}
+      <div>
+        <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-600">
+          Student Category (Boys / Girls)
+        </label>
+        <div className="grid grid-cols-2 gap-2 max-w-xs">
+          <button
+            type="button"
+            onClick={() => handleCategoryChange('boys')}
+            className={cx(
+              'flex min-h-11 items-center justify-center rounded-lg border font-bold text-sm transition-all',
+              category === 'boys'
+                ? 'border-brand-700 bg-brand-800 text-white shadow-xs'
+                : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50',
+            )}
+          >
+            BOYS
+          </button>
+          <button
+            type="button"
+            onClick={() => handleCategoryChange('girls')}
+            className={cx(
+              'flex min-h-11 items-center justify-center rounded-lg border font-bold text-sm transition-all',
+              category === 'girls'
+                ? 'border-pink-600 bg-pink-700 text-white shadow-xs'
+                : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50',
+            )}
+          >
+            GIRLS
+          </button>
+        </div>
+      </div>
+
       <div className="grid grid-cols-[6.5rem_1fr] gap-3">
         <div>
           <label htmlFor="student-roll" className="mb-1 block text-sm font-medium text-slate-700">
-            Roll No.
+            Roll No. ({category === 'boys' ? 'Boys' : 'Girls'})
           </label>
           <input
             id="student-roll"
@@ -264,7 +327,7 @@ export function StudentForm({ detail, editing, onSaved, onCancelEdit }: StudentF
         </div>
         <div>
           <label htmlFor="student-name" className="mb-1 block text-sm font-medium text-slate-700">
-            Student name
+            Student Name
           </label>
           <input
             id="student-name"
@@ -300,7 +363,10 @@ export function StudentForm({ detail, editing, onSaved, onCancelEdit }: StudentF
         )}
       </div>
 
-      <label htmlFor="student-absent" className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border border-slate-200 px-3.5 py-2.5 text-sm hover:bg-slate-50 has-[:checked]:border-slate-400 has-[:checked]:bg-slate-50">
+      <label
+        htmlFor="student-absent"
+        className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border border-slate-200 px-3.5 py-2.5 text-sm hover:bg-slate-50 has-[:checked]:border-slate-400 has-[:checked]:bg-slate-50"
+      >
         <input
           id="student-absent"
           type="checkbox"
@@ -310,19 +376,18 @@ export function StudentForm({ detail, editing, onSaved, onCancelEdit }: StudentF
         />
         <span>
           <span className="font-medium text-slate-800">Absent / did not appear</span>
-          <span className="block text-xs text-slate-500">Save the student without marks. Shown as “AB”, not counted as appeared.</span>
+          <span className="block text-xs text-slate-500">
+            Save without marks. Shown as "AB", not counted as appeared.
+          </span>
         </span>
       </label>
-      {isEdit && isAbsent && Object.keys(editing.marks).length > 0 && (
-        <Alert tone="warning">Saving as absent will delete this student's existing marks.</Alert>
-      )}
 
       {!isAbsent && (
         <>
           {config.normalSubjects.length > 0 && (
             <fieldset>
               <legend className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Subject marks (out of 100, pass {PASS_MARK})
+                Subject Marks (out of 100, pass {PASS_MARK})
               </legend>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
                 {config.normalSubjects.map((s) => markField(s.id, s.name, { evaluateIndividually: true }))}
@@ -358,29 +423,16 @@ export function StudentForm({ detail, editing, onSaved, onCancelEdit }: StudentF
                   </output>
                 </div>
               </div>
-              <p className="mt-2 text-xs text-slate-600">
-                Pass if Quran + Hifz ≥ {PASS_MARK}. Each part is not checked separately.
-                {quranHifzTotal !== null && (
-                  <strong className={cx('ml-1', isPassingMark(quranHifzTotal) ? 'text-pass-700' : 'text-fail-700')}>
-                    {isPassingMark(quranHifzTotal) ? 'Passed' : 'Below pass mark'}
-                  </strong>
-                )}
-              </p>
             </fieldset>
           )}
 
-          {/* Live results */}
+          {/* Live results bar */}
           <div className="grid grid-cols-2 gap-3 rounded-xl bg-slate-900 p-4 text-white sm:grid-cols-3" aria-live="polite">
             <div>
               <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
                 {allEntered ? 'Grand Total' : 'Total so far'}
               </p>
               <p className="mt-0.5 text-2xl font-bold tabular-nums">{allEntered ? formatMark(grandTotal) : formatMark(runningTotal)}</p>
-              {!allEntered && (
-                <p className="text-xs text-slate-400">
-                  {enteredCount} of {orderedMarkIds.length} marks entered
-                </p>
-              )}
             </div>
             {config.includeQuranHifz && (
               <div className="hidden sm:block">
@@ -418,7 +470,7 @@ export function StudentForm({ detail, editing, onSaved, onCancelEdit }: StudentF
           </Button>
         )}
         <Button type="submit" size="lg" loading={saving} icon={<CheckIcon />} id="save-student-button" className="sm:min-w-48">
-          {saving ? (isEdit ? 'Updating marks…' : 'Saving student…') : isEdit ? 'Update Student' : 'Save & Next'}
+          {saving ? (isEdit ? 'Updating marks...' : 'Saving student...') : isEdit ? 'Update Student' : 'Save & Next'}
         </Button>
       </div>
     </form>

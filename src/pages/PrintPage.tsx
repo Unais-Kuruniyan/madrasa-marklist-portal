@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, Fragment } from 'react';
 import { useAsyncData } from '../hooks/useAsyncData';
 import { paths } from '../hooks/useHashRoute';
-import { calculateSummary, evaluateStudent, isPassingMark } from '../lib/calculations/marks';
+import { calculateSummary, evaluateStudent, formatCombinedCount, isPassingMark } from '../lib/calculations/marks';
 import { getClassDetail } from '../lib/supabase/api';
 import { cx, formatMark, formatPercent } from '../utils/format';
 import { Alert } from '../components/ui/Alert';
@@ -9,8 +9,8 @@ import { Button, LinkButton } from '../components/ui/Button';
 import { ArrowLeftIcon, PrintIcon } from '../components/ui/Icons';
 import { LoadingBlock } from '../components/ui/Spinner';
 
-export function PrintPage({ classId }: { classId: string }) {
-  const { data, loading, error, reload } = useAsyncData(() => getClassDetail(classId), [classId]);
+export function PrintPage({ classId, examId }: { classId: string; examId?: string }) {
+  const { data, loading, error, reload } = useAsyncData(() => getClassDetail(classId, examId), [classId, examId]);
   const [orientation, setOrientation] = useState<'portrait' | 'landscape'>('landscape');
 
   const evaluated = useMemo(() => {
@@ -19,9 +19,39 @@ export function PrintPage({ classId }: { classId: string }) {
   }, [data]);
 
   const summary = useMemo(() => {
-    if (!data) return { totalStudents: 0, appeared: 0, passed: 0, failed: 0, absent: 0, incomplete: 0, passPercentage: 0 };
+    if (!data)
+      return {
+        totalStudents: 0,
+        totalBoys: 0,
+        totalGirls: 0,
+        appearedBoys: 0,
+        appearedGirls: 0,
+        passedBoys: 0,
+        passedGirls: 0,
+        failedBoys: 0,
+        failedGirls: 0,
+        totalParticipants: 0,
+        totalAppeared: 0,
+        totalPassed: 0,
+        totalFailed: 0,
+        passPercentage: 0,
+      };
     return calculateSummary(data.schoolClass.totalStudents, evaluated);
   }, [data, evaluated]);
+
+  const boysGroup = useMemo(() => {
+    if (!data) return [];
+    return data.students
+      .filter((s) => s.category === 'boys')
+      .map((s) => ({ student: s, result: evaluateStudent(data.config, s) }));
+  }, [data]);
+
+  const girlsGroup = useMemo(() => {
+    if (!data) return [];
+    return data.students
+      .filter((s) => s.category === 'girls')
+      .map((s) => ({ student: s, result: evaluateStudent(data.config, s) }));
+  }, [data]);
 
   if (loading) return <LoadingBlock message="Preparing printable document..." />;
   if (error)
@@ -39,19 +69,79 @@ export function PrintPage({ classId }: { classId: string }) {
       </div>
     );
 
-  const { schoolClass, config, students } = data;
+  const { schoolClass, examination, config, students } = data;
   const withQH = config.includeQuranHifz && config.quranSubject && config.hifzSubject;
+  const colSpanCount = (config.normalSubjects.length || 0) + (withQH ? 3 : 0) + 4;
 
   const handlePrint = () => {
     window.print();
   };
 
+  const renderPrintRow = (student: typeof students[0], res: ReturnType<typeof evaluateStudent>) => (
+    <tr key={student.id}>
+      <td style={{ textAlign: 'center', fontWeight: 'bold' }}>{student.rollNumber}</td>
+      <td style={{ fontWeight: '500' }}>{student.studentName}</td>
+      {config.normalSubjects.map((s, idx) => {
+        const m = res.normalMarks[idx];
+        const fail = m !== null && !isPassingMark(m);
+        return (
+          <td
+            key={s.id}
+            style={{
+              textAlign: 'center',
+              fontWeight: fail ? 'bold' : 'normal',
+              color: fail ? '#b91c1c' : '#000',
+            }}
+          >
+            {formatMark(m)}
+          </td>
+        );
+      })}
+      {withQH && (
+        <>
+          <td style={{ textAlign: 'center' }}>{formatMark(res.quran)}</td>
+          <td style={{ textAlign: 'center' }}>{formatMark(res.hifz)}</td>
+          <td
+            style={{
+              textAlign: 'center',
+              fontWeight: 'bold',
+              color: res.quranHifzTotal !== null && !isPassingMark(res.quranHifzTotal) ? '#b91c1c' : '#000',
+            }}
+          >
+            {formatMark(res.quranHifzTotal)}
+          </td>
+        </>
+      )}
+      <td style={{ textAlign: 'center', fontWeight: 'bold' }}>{formatMark(res.grandTotal)}</td>
+      <td
+        style={{
+          textAlign: 'center',
+          fontWeight: 'bold',
+          color: res.result === 'P' ? '#15803d' : res.result === 'F' ? '#b91c1c' : '#666',
+        }}
+      >
+        {res.result ?? (res.status === 'absent' ? 'AB' : '-')}
+      </td>
+      <td style={{ fontSize: '10px' }}>
+        {res.status === 'absent' ? (
+          'Absent'
+        ) : res.status === 'incomplete' ? (
+          'Incomplete'
+        ) : res.result === 'F' && res.failedSubjects.length > 0 ? (
+          `Needs 40 in ${res.failedSubjects.join(', ')}`
+        ) : (
+          'Passed'
+        )}
+      </td>
+    </tr>
+  );
+
   return (
     <div className="min-h-screen bg-slate-100 pb-12">
-      {/* On-screen control bar (Hidden when printing) */}
+      {/* On-screen controls */}
       <header className="no-print sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur px-4 py-3 shadow-xs">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-4">
-          <LinkButton href={paths.classPage(schoolClass.id)} variant="ghost" size="sm" icon={<ArrowLeftIcon />}>
+          <LinkButton href={paths.classPage(schoolClass.id, examination.id)} variant="ghost" size="sm" icon={<ArrowLeftIcon />}>
             Back to Class
           </LinkButton>
 
@@ -63,7 +153,7 @@ export function PrintPage({ classId }: { classId: string }) {
                 value={orientation}
                 onChange={(e) => setOrientation(e.target.value as 'portrait' | 'landscape')}
               >
-                <option value="landscape">Landscape (Recommended for wide tables)</option>
+                <option value="landscape">Landscape (Recommended)</option>
                 <option value="portrait">Portrait</option>
               </select>
             </label>
@@ -75,42 +165,38 @@ export function PrintPage({ classId }: { classId: string }) {
         </div>
       </header>
 
-      {/* Printable Sheet */}
+      {/* Printable Paper Document */}
       <main className="p-4 sm:p-8">
         <div
           className={cx(
-            'print-paper print-sheet animate-fade-in bg-white border border-slate-300',
+            'print-paper print-sheet animate-fade-in bg-white border border-slate-300 relative',
             orientation === 'landscape' ? 'print-paper--landscape' : 'print-paper--portrait',
           )}
         >
-          {/* Print Document Header */}
-          <div className="text-center mb-6">
-            {schoolClass.institutionName ? (
-              <h1 className="text-2xl font-bold uppercase tracking-wider text-black font-serif">
-                {schoolClass.institutionName}
-              </h1>
-            ) : (
-              <h1 className="text-xl font-bold uppercase tracking-wider text-black font-serif">
-                SCHOOL / MADRASA MARK LIST
-              </h1>
-            )}
-
-            {schoolClass.institutionLocation && (
-              <p className="text-sm font-medium text-slate-800 font-serif mt-0.5">
-                {schoolClass.institutionLocation}
-              </p>
-            )}
-
-            {/* Boxed Class Heading */}
-            <div className="mt-4 inline-block border-2 border-black px-6 py-1.5 bg-slate-50">
-              <h2 className="text-xl font-extrabold uppercase tracking-widest text-black font-serif">
-                {schoolClass.className}
-              </h2>
+          {/* Header Layout: Institution Name (Center), Class Box (Right), Location/Range & Exam Subtitles */}
+          <div className="relative mb-6 pt-2 pb-4 border-b-2 border-black">
+            {/* Prominent Class Box on the RIGHT */}
+            <div className="absolute right-0 top-0 border-2 border-black px-4 py-2 bg-slate-50 text-center min-w-[100px]">
+              <span className="block text-[9px] font-bold uppercase tracking-widest text-slate-600">CLASS</span>
+              <strong className="text-xl font-extrabold uppercase text-black">{schoolClass.className}</strong>
             </div>
 
-            <p className="mt-2 text-xs font-bold uppercase tracking-widest text-slate-700">
-              CLASS MARK LIST &amp; EXAMINATION RESULT
-            </p>
+            <div className="text-center pr-28 pl-4">
+              <h1 className="text-2xl font-bold uppercase tracking-wider text-black font-serif">
+                {schoolClass.institutionName || 'SCHOOL / MADRASA MARK LIST'}
+              </h1>
+
+              <div className="mt-1 text-xs font-semibold text-slate-800 font-serif flex items-center justify-center gap-4">
+                {schoolClass.institutionLocation && <span>Location: {schoolClass.institutionLocation}</span>}
+                {schoolClass.rangeName && <span>Range: {schoolClass.rangeName}</span>}
+              </div>
+
+              <div className="mt-2 inline-block border-b border-black pb-0.5">
+                <h2 className="text-sm font-bold uppercase tracking-widest text-black font-serif">
+                  {examination.examName} — {examination.examYear}
+                </h2>
+              </div>
+            </div>
           </div>
 
           {/* Mark Table */}
@@ -140,98 +226,70 @@ export function PrintPage({ classId }: { classId: string }) {
               <tbody>
                 {students.length === 0 ? (
                   <tr>
-                    <td colSpan={100} style={{ textAlign: 'center', padding: '20px', fontStyle: 'italic' }}>
-                      No student record entered for this class.
+                    <td colSpan={colSpanCount} style={{ textAlign: 'center', padding: '20px', fontStyle: 'italic' }}>
+                      No student record entered for this examination.
                     </td>
                   </tr>
                 ) : (
-                  students.map((student) => {
-                    const res = evaluateStudent(config, student);
-                    return (
-                      <tr key={student.id}>
-                        <td style={{ textAlign: 'center', fontWeight: 'bold' }}>{student.rollNumber}</td>
-                        <td style={{ fontWeight: '500' }}>{student.studentName}</td>
-                        {config.normalSubjects.map((s, idx) => {
-                          const m = res.normalMarks[idx];
-                          const fail = m !== null && !isPassingMark(m);
-                          return (
-                            <td
-                              key={s.id}
-                              style={{
-                                textAlign: 'center',
-                                fontWeight: fail ? 'bold' : 'normal',
-                                color: fail ? '#b91c1c' : '#000',
-                              }}
-                            >
-                              {formatMark(m)}
-                            </td>
-                          );
-                        })}
-                        {withQH && (
-                          <>
-                            <td style={{ textAlign: 'center' }}>{formatMark(res.quran)}</td>
-                            <td style={{ textAlign: 'center' }}>{formatMark(res.hifz)}</td>
-                            <td
-                              style={{
-                                textAlign: 'center',
-                                fontWeight: 'bold',
-                                color: res.quranHifzTotal !== null && !isPassingMark(res.quranHifzTotal) ? '#b91c1c' : '#000',
-                              }}
-                            >
-                              {formatMark(res.quranHifzTotal)}
-                            </td>
-                          </>
-                        )}
-                        <td style={{ textAlign: 'center', fontWeight: 'bold' }}>{formatMark(res.grandTotal)}</td>
-                        <td
-                          style={{
-                            textAlign: 'center',
-                            fontWeight: 'bold',
-                            color: res.result === 'P' ? '#15803d' : res.result === 'F' ? '#b91c1c' : '#666',
-                          }}
-                        >
-                          {res.result ?? (res.status === 'absent' ? 'AB' : '-')}
-                        </td>
-                        <td style={{ fontSize: '10px' }}>
-                          {res.status === 'absent' ? (
-                            'Absent'
-                          ) : res.status === 'incomplete' ? (
-                            'Incomplete'
-                          ) : res.result === 'F' && res.failedSubjects.length > 0 ? (
-                            `Needs 40 in ${res.failedSubjects.join(', ')}`
-                          ) : (
-                            'Passed'
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })
+                  <>
+                    {/* BOYS SECTION */}
+                    {boysGroup.length > 0 && (
+                      <Fragment>
+                        <tr style={{ background: '#f1f5f9', fontWeight: 'bold', textTransform: 'uppercase', fontSize: '10px' }}>
+                          <td colSpan={colSpanCount} style={{ padding: '4px 8px', textAlign: 'left' }}>
+                            ── BOYS ({boysGroup.length}) ──
+                          </td>
+                        </tr>
+                        {boysGroup.map(({ student, result }) => renderPrintRow(student, result))}
+                      </Fragment>
+                    )}
+
+                    {/* GIRLS SECTION */}
+                    {girlsGroup.length > 0 && (
+                      <Fragment>
+                        <tr style={{ background: '#fdf2f8', fontWeight: 'bold', textTransform: 'uppercase', fontSize: '10px' }}>
+                          <td colSpan={colSpanCount} style={{ padding: '4px 8px', textAlign: 'left' }}>
+                            ── GIRLS ({girlsGroup.length}) ──
+                          </td>
+                        </tr>
+                        {girlsGroup.map(({ student, result }) => renderPrintRow(student, result))}
+                      </Fragment>
+                    )}
+                  </>
                 )}
               </tbody>
             </table>
           </div>
 
-          {/* Print Summary Statistics */}
+          {/* Print Result Summary (Mathematical Boys + Girls = Total format) */}
           <div className="border border-black p-3 mb-8 bg-slate-50">
             <h3 className="text-xs font-bold uppercase tracking-wider border-b border-black pb-1 mb-2">
               RESULT SUMMARY
             </h3>
             <div className="grid grid-cols-5 gap-2 text-center text-xs font-serif">
               <div>
-                <span className="block text-slate-600">Total Strength</span>
-                <strong className="text-sm">{summary.totalStudents}</strong>
+                <span className="block text-slate-600">Total Participants</span>
+                <strong className="text-sm">
+                  {formatCombinedCount(summary.totalBoys, summary.totalGirls, summary.totalParticipants)}
+                </strong>
               </div>
               <div>
                 <span className="block text-slate-600">Appeared</span>
-                <strong className="text-sm">{summary.appeared}</strong>
+                <strong className="text-sm">
+                  {formatCombinedCount(summary.appearedBoys, summary.appearedGirls, summary.totalAppeared)}
+                </strong>
               </div>
               <div>
                 <span className="block text-slate-600">Passed</span>
-                <strong className="text-sm text-green-800">{summary.passed}</strong>
+                <strong className="text-sm text-green-900">
+                  {formatCombinedCount(summary.passedBoys, summary.passedGirls, summary.totalPassed)}
+                </strong>
               </div>
               <div>
                 <span className="block text-slate-600">Failed</span>
-                <strong className="text-sm text-red-800">{summary.failed}</strong>
+                <strong className="text-sm text-red-900">
+                  {formatCombinedCount(summary.failedBoys, summary.failedGirls, summary.totalFailed)}
+                </strong>
               </div>
               <div>
                 <span className="block text-slate-600">Pass Percentage</span>

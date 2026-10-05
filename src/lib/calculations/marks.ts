@@ -1,15 +1,5 @@
 /**
- * Mark calculations — the SINGLE source of truth for all business rules.
- *
- * Rules:
- *  1. Every normal subject must be >= PASS_MARK (40) independently.
- *  2. Quran and Hifz are two components of ONE subject. They are NOT
- *     checked individually. Only their combined total is checked
- *     against PASS_MARK.
- *  3. Grand Total = sum of normal subjects (+ Quran + Hifz total, once).
- *  4. Result is 'P' only if rule 1 holds and (when enabled) rule 2 holds.
- *
- * All functions here are pure and framework-free so they can be unit tested.
+ * Mark calculations — SINGLE source of truth for all business rules.
  */
 import type {
   ClassConfig,
@@ -19,16 +9,10 @@ import type {
   StudentResult,
 } from '../../types';
 
-/** Minimum mark required to pass a subject (and the combined Quran + Hifz). */
 export const PASS_MARK = 40;
-
-/** Default maximum mark for any subject / component. */
 export const DEFAULT_MAX_MARKS = 100;
-
-/** Display name for the combined subject. */
 export const QURAN_HIFZ_LABEL = 'Quran + Hifz';
 
-/** Round to 2 decimals and avoid floating point noise (e.g. 0.1 + 0.2). */
 export function round2(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
@@ -37,12 +21,10 @@ function sum(values: number[]): number {
   return round2(values.reduce((acc, v) => acc + v, 0));
 }
 
-/** Quran + Hifz combined total. */
 export function calculateQuranHifzTotal(quran: number, hifz: number): number {
   return round2(quran + hifz);
 }
 
-/** Maximum possible combined Quran + Hifz total, from the component maxima. */
 export function calculateQuranHifzMax(
   quranMax: number = DEFAULT_MAX_MARKS,
   hifzMax: number = DEFAULT_MAX_MARKS,
@@ -50,11 +32,6 @@ export function calculateQuranHifzMax(
   return quranMax + hifzMax;
 }
 
-/**
- * Grand Total = all normal subject marks + Quran/Hifz combined total.
- * Pass `null`/`undefined` for `quranHifzTotal` when Quran/Hifz is disabled.
- * Quran/Hifz therefore contributes exactly once.
- */
 export function calculateGrandTotal(
   normalMarks: number[],
   quranHifzTotal?: number | null,
@@ -63,17 +40,10 @@ export function calculateGrandTotal(
   return quranHifzTotal == null ? base : round2(base + quranHifzTotal);
 }
 
-/** Does a single (normal or combined) subject score pass? */
 export function isPassingMark(mark: number): boolean {
   return mark >= PASS_MARK;
 }
 
-/**
- * Overall result.
- * - every normal subject must be >= 40
- * - if Quran/Hifz is enabled, the COMBINED total must be >= 40
- * Pass `null`/`undefined` for `quranHifzTotal` when Quran/Hifz is disabled.
- */
 export function calculateResult(
   normalMarks: number[],
   quranHifzTotal?: number | null,
@@ -83,7 +53,6 @@ export function calculateResult(
   return normalOk && quranHifzOk ? 'P' : 'F';
 }
 
-/** Ids of every subject a student must have a mark for, given the config. */
 export function requiredSubjectIds(config: ClassConfig): string[] {
   const ids = config.normalSubjects.map((s) => s.id);
   if (config.includeQuranHifz && config.quranSubject && config.hifzSubject) {
@@ -92,11 +61,10 @@ export function requiredSubjectIds(config: ClassConfig): string[] {
   return ids;
 }
 
-/**
- * Evaluate one student against the class configuration.
- * Handles absent (no marks) and incomplete (some marks missing) students.
- */
-export function evaluateStudent(config: ClassConfig, student: Pick<Student, 'id' | 'marks'>): StudentResult {
+export function evaluateStudent(
+  config: ClassConfig,
+  student: Pick<Student, 'id' | 'category' | 'marks'>,
+): StudentResult {
   const markOf = (subjectId: string | undefined): number | null => {
     if (!subjectId) return null;
     const value = student.marks[subjectId];
@@ -120,6 +88,7 @@ export function evaluateStudent(config: ClassConfig, student: Pick<Student, 'id'
   if (status !== 'complete') {
     return {
       studentId: student.id,
+      category: student.category ?? 'boys',
       status,
       normalMarks,
       quran,
@@ -141,6 +110,7 @@ export function evaluateStudent(config: ClassConfig, student: Pick<Student, 'id'
 
   return {
     studentId: student.id,
+    category: student.category ?? 'boys',
     status,
     normalMarks,
     quran,
@@ -153,24 +123,50 @@ export function evaluateStudent(config: ClassConfig, student: Pick<Student, 'id'
 }
 
 /**
- * Class summary.
- * Appeared = students whose marks are completely entered.
- * Absent (no marks) and incomplete students are NOT counted as appeared.
+ * Calculates summary statistics for Boys, Girls and Overall.
  */
-export function calculateSummary(totalStudents: number, results: StudentResult[]): ClassSummary {
-  const appeared = results.filter((r) => r.status === 'complete').length;
-  const passed = results.filter((r) => r.result === 'P').length;
-  const failed = results.filter((r) => r.result === 'F').length;
-  const absent = results.filter((r) => r.status === 'absent').length;
-  const incomplete = results.filter((r) => r.status === 'incomplete').length;
+export function calculateSummary(totalCapacity: number, results: StudentResult[]): ClassSummary {
+  const boys = results.filter((r) => r.category === 'boys');
+  const girls = results.filter((r) => r.category === 'girls');
+
+  const totalBoys = boys.length;
+  const totalGirls = girls.length;
+
+  const appearedBoys = boys.filter((r) => r.status === 'complete').length;
+  const appearedGirls = girls.filter((r) => r.status === 'complete').length;
+
+  const passedBoys = boys.filter((r) => r.result === 'P').length;
+  const passedGirls = girls.filter((r) => r.result === 'P').length;
+
+  const failedBoys = boys.filter((r) => r.result === 'F').length;
+  const failedGirls = girls.filter((r) => r.result === 'F').length;
+
+  const totalParticipants = totalBoys + totalGirls;
+  const totalAppeared = appearedBoys + appearedGirls;
+  const totalPassed = passedBoys + passedGirls;
+  const totalFailed = failedBoys + failedGirls;
+
+  const passPercentage = totalAppeared === 0 ? 0 : round2((totalPassed / totalAppeared) * 100);
 
   return {
-    totalStudents,
-    appeared,
-    passed,
-    failed,
-    absent,
-    incomplete,
-    passPercentage: appeared === 0 ? 0 : round2((passed / appeared) * 100),
+    totalStudents: totalCapacity,
+    totalBoys,
+    totalGirls,
+    appearedBoys,
+    appearedGirls,
+    passedBoys,
+    passedGirls,
+    failedBoys,
+    failedGirls,
+    totalParticipants,
+    totalAppeared,
+    totalPassed,
+    totalFailed,
+    passPercentage,
   };
+}
+
+/** Formats counts as `boys + girls = total` (e.g. "10 + 5 = 15") */
+export function formatCombinedCount(boysCount: number, girlsCount: number, total: number): string {
+  return `${boysCount} + ${girlsCount} = ${total}`;
 }

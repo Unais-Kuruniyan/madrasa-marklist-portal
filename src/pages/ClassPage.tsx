@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from 'react';
 import { useAsyncData } from '../hooks/useAsyncData';
 import { paths } from '../hooks/useHashRoute';
 import { calculateSummary, evaluateStudent } from '../lib/calculations/marks';
-import { deleteStudent, getClassDetail } from '../lib/supabase/api';
+import { deleteStudent, getClassDetail, saveExamination } from '../lib/supabase/api';
 import { handleError } from '../lib/supabase/errors';
 import type { Student } from '../types';
 import { StudentForm } from '../components/StudentForm';
@@ -13,15 +13,22 @@ import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { EmptyState } from '../components/ui/EmptyState';
 import { ArrowLeftIcon, EditIcon, PlusIcon, PrintIcon } from '../components/ui/Icons';
 import { LoadingBlock } from '../components/ui/Spinner';
+import { TextField } from '../components/ui/TextField';
 
-export function ClassPage({ classId }: { classId: string }) {
-  const { data, loading, error, reload } = useAsyncData(() => getClassDetail(classId), [classId]);
+export function ClassPage({ classId, examId }: { classId: string; examId?: string }) {
+  const { data, loading, error, reload } = useAsyncData(() => getClassDetail(classId, examId), [classId, examId]);
 
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [studentToDelete, setStudentToDelete] = useState<Student | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  // New Exam Modal state
+  const [showNewExamModal, setShowNewExamModal] = useState(false);
+  const [newExamName, setNewExamName] = useState('Annual Examination');
+  const [newExamYear, setNewExamYear] = useState(String(new Date().getFullYear()));
+  const [savingExam, setSavingExam] = useState(false);
 
   const formCardRef = useRef<HTMLDivElement>(null);
 
@@ -31,7 +38,23 @@ export function ClassPage({ classId }: { classId: string }) {
   }, [data]);
 
   const summary = useMemo(() => {
-    if (!data) return { totalStudents: 0, appeared: 0, passed: 0, failed: 0, absent: 0, incomplete: 0, passPercentage: 0 };
+    if (!data)
+      return {
+        totalStudents: 0,
+        totalBoys: 0,
+        totalGirls: 0,
+        appearedBoys: 0,
+        appearedGirls: 0,
+        passedBoys: 0,
+        passedGirls: 0,
+        failedBoys: 0,
+        failedGirls: 0,
+        totalParticipants: 0,
+        totalAppeared: 0,
+        totalPassed: 0,
+        totalFailed: 0,
+        passPercentage: 0,
+      };
     return calculateSummary(data.schoolClass.totalStudents, evaluated);
   }, [data, evaluated]);
 
@@ -51,7 +74,7 @@ export function ClassPage({ classId }: { classId: string }) {
       />
     );
 
-  const { schoolClass, config, students } = data;
+  const { schoolClass, examination, allExaminations, config, students } = data;
 
   const handleEditStudent = (student: Student) => {
     setEditingStudent(student);
@@ -63,8 +86,12 @@ export function ClassPage({ classId }: { classId: string }) {
     setEditingStudent(null);
   };
 
-  const handleStudentSaved = ({ name, rollNumber, wasEdit }: { name: string; rollNumber: number; wasEdit: boolean }) => {
-    setSuccessMessage(wasEdit ? `Updated marks for Roll ${rollNumber} (${name})` : `Saved Roll ${rollNumber} (${name})`);
+  const handleStudentSaved = ({ name, rollNumber, category, wasEdit }: { name: string; rollNumber: number; category: string; wasEdit: boolean }) => {
+    setSuccessMessage(
+      wasEdit
+        ? `Updated Roll ${rollNumber} (${category === 'boys' ? 'Boys' : 'Girls'}) — ${name}`
+        : `Saved Roll ${rollNumber} (${category === 'boys' ? 'Boys' : 'Girls'}) — ${name}`,
+    );
     if (wasEdit) setEditingStudent(null);
     void reload();
   };
@@ -87,9 +114,25 @@ export function ClassPage({ classId }: { classId: string }) {
     }
   };
 
+  const handleCreateNewExam = async () => {
+    if (!newExamName.trim()) return;
+    setSavingExam(true);
+    setActionError(null);
+    try {
+      const yr = Number(newExamYear) || new Date().getFullYear();
+      const createdExamId = await saveExamination(schoolClass.id, newExamName.trim(), yr);
+      setShowNewExamModal(false);
+      window.location.hash = paths.classPage(schoolClass.id, createdExamId);
+    } catch (err) {
+      setActionError(handleError(err, 'Could not create new examination.'));
+    } finally {
+      setSavingExam(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
-      {/* Top Header Navigation & Meta */}
+      {/* Header Navigation & Class/Exam Info */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between border-b border-slate-200 pb-5">
         <div>
           <a
@@ -100,28 +143,49 @@ export function ClassPage({ classId }: { classId: string }) {
           </a>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">{schoolClass.className}</h1>
           {schoolClass.institutionName && (
-            <p className="text-sm font-medium text-slate-600">
+            <p className="text-sm font-medium text-slate-700">
               {schoolClass.institutionName}
               {schoolClass.institutionLocation ? `, ${schoolClass.institutionLocation}` : ''}
+              {schoolClass.rangeName ? ` | Range: ${schoolClass.rangeName}` : ''}
             </p>
           )}
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-            <span className="rounded-md bg-slate-100 px-2.5 py-1 font-semibold text-slate-700">
-              {schoolClass.totalStudents} Max Students
-            </span>
-            <span className="rounded-md bg-slate-100 px-2.5 py-1 font-semibold text-slate-700">
-              {config.normalSubjects.length} Normal Subject{config.normalSubjects.length === 1 ? '' : 's'}
-            </span>
-            {config.includeQuranHifz && (
-              <span className="rounded-md bg-brand-100 px-2.5 py-1 font-bold text-brand-800">
-                + Quran &amp; Hifz Enabled
-              </span>
-            )}
+
+          {/* Exam Selector Dropdown */}
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-2">
+              <label htmlFor="select-exam" className="text-xs font-bold uppercase text-slate-500">
+                Exam:
+              </label>
+              <select
+                id="select-exam"
+                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-bold text-brand-900 shadow-xs"
+                value={examination.id}
+                onChange={(e) => {
+                  window.location.hash = paths.classPage(schoolClass.id, e.target.value);
+                }}
+              >
+                {allExaminations.map((ex) => (
+                  <option key={ex.id} value={ex.id}>
+                    {ex.examName} — {ex.examYear}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <Button variant="secondary" size="sm" icon={<PlusIcon />} onClick={() => setShowNewExamModal(true)}>
+              New Exam
+            </Button>
           </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <LinkButton href={paths.print(schoolClass.id)} variant="primary" size="md" icon={<PrintIcon />} id="print-marklist-btn">
+          <LinkButton
+            href={paths.print(schoolClass.id, examination.id)}
+            variant="primary"
+            size="md"
+            icon={<PrintIcon />}
+            id="print-marklist-btn"
+          >
             Print Mark List
           </LinkButton>
           <LinkButton href={paths.editClass(schoolClass.id)} variant="secondary" size="md" icon={<EditIcon />} id="edit-class-btn">
@@ -139,11 +203,11 @@ export function ClassPage({ classId }: { classId: string }) {
           <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
             {editingStudent ? (
               <>
-                <EditIcon className="size-5 text-brand-600" /> Editing Roll {editingStudent.rollNumber}: {editingStudent.studentName}
+                <EditIcon className="size-5 text-brand-600" /> Editing Roll {editingStudent.rollNumber} ({editingStudent.category === 'boys' ? 'Boys' : 'Girls'}): {editingStudent.studentName}
               </>
             ) : (
               <>
-                <PlusIcon className="size-5 text-brand-600" /> Enter Student Marks
+                <PlusIcon className="size-5 text-brand-600" /> Enter Student Marks ({examination.examName} — {examination.examYear})
               </>
             )}
           </h2>
@@ -166,7 +230,7 @@ export function ClassPage({ classId }: { classId: string }) {
       <section className="space-y-3" aria-labelledby="marklist-heading">
         <div className="flex items-center justify-between">
           <h2 id="marklist-heading" className="text-xl font-bold text-slate-900">
-            Class Mark List <span className="text-sm font-normal text-slate-500">({students.length} entered)</span>
+            {examination.examName} — {examination.examYear} Mark List <span className="text-sm font-normal text-slate-500">({students.length} entered)</span>
           </h2>
         </div>
 
@@ -190,10 +254,47 @@ export function ClassPage({ classId }: { classId: string }) {
         onConfirm={() => void confirmDeleteStudent()}
       >
         <p>
-          This will permanently delete <strong>Roll {studentToDelete?.rollNumber} ({studentToDelete?.studentName})</strong> and all their entered marks.
+          This will permanently delete <strong>Roll {studentToDelete?.rollNumber} ({studentToDelete?.category === 'boys' ? 'Boys' : 'Girls'}) — {studentToDelete?.studentName}</strong> and all their entered marks for this examination.
         </p>
-        <p>This action cannot be undone.</p>
       </ConfirmDialog>
+
+      {/* Create New Examination Modal */}
+      {showNewExamModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl space-y-4">
+            <h3 className="text-lg font-bold text-slate-900">Create New Examination</h3>
+            <p className="text-xs text-slate-500">
+              Create another examination (e.g. Annual Exam) under {schoolClass.className}. Previous exam results will be preserved!
+            </p>
+
+            <TextField
+              label="Examination Name"
+              id="new-exam-name"
+              value={newExamName}
+              onChange={(e) => setNewExamName(e.target.value)}
+              placeholder="e.g. Annual Examination"
+            />
+
+            <TextField
+              label="Exam Year"
+              id="new-exam-year"
+              value={newExamYear}
+              onChange={(e) => setNewExamYear(e.target.value)}
+              placeholder="e.g. 2026"
+              inputMode="numeric"
+            />
+
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="secondary" onClick={() => setShowNewExamModal(false)} disabled={savingExam}>
+                Cancel
+              </Button>
+              <Button variant="primary" onClick={() => void handleCreateNewExam()} loading={savingExam}>
+                Create Exam
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

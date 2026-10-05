@@ -6,7 +6,7 @@ import { handleError } from '../lib/supabase/errors';
 import type { ClassDetail, SubjectDraft } from '../types';
 import { makeKey } from '../utils/format';
 import { loadInstitution, saveInstitution } from '../utils/storage';
-import { parseTotalStudents } from '../utils/validation';
+import { parseTotalStudents, parseYear } from '../utils/validation';
 import { SubjectEditor } from '../components/SubjectEditor';
 import { Alert } from '../components/ui/Alert';
 import { Button, LinkButton } from '../components/ui/Button';
@@ -16,6 +16,15 @@ import { ArrowLeftIcon } from '../components/ui/Icons';
 import { LoadingBlock } from '../components/ui/Spinner';
 import { TextField } from '../components/ui/TextField';
 
+const COMMON_EXAMS = [
+  'Half-Yearly Examination',
+  'Annual Examination',
+  'Quarterly Examination',
+  'Monthly Examination',
+  'Model Examination',
+  'Custom',
+];
+
 export function ClassFormPage({ classId }: { classId: string | null }) {
   const { data, loading, error, reload } = useAsyncData(
     () => (classId ? getClassDetail(classId) : Promise.resolve(null)),
@@ -23,7 +32,7 @@ export function ClassFormPage({ classId }: { classId: string | null }) {
   );
 
   if (classId) {
-    if (loading) return <LoadingBlock message="Loading class…" />;
+    if (loading) return <LoadingBlock message="Loading class..." />;
     if (error)
       return (
         <Alert tone="error" title="Could not load class" action={<Button variant="secondary" size="sm" onClick={() => void reload()}>Try again</Button>}>
@@ -47,6 +56,8 @@ export function ClassFormPage({ classId }: { classId: string | null }) {
 
 interface FormErrors {
   className?: string;
+  examName?: string;
+  examYear?: string;
   totalStudents?: string;
   subjects?: string;
   subjectFields: Record<string, string>;
@@ -60,7 +71,15 @@ function ClassForm({ detail }: { detail: ClassDetail | null }) {
   const [institutionLocation, setInstitutionLocation] = useState(
     detail?.schoolClass.institutionLocation ?? remembered.location,
   );
+  const [rangeName, setRangeName] = useState(detail?.schoolClass.rangeName ?? '');
   const [className, setClassName] = useState(detail?.schoolClass.className ?? '');
+
+  const initialExamName = detail?.examination.examName ?? 'Half-Yearly Examination';
+  const isCustomExam = !COMMON_EXAMS.slice(0, -1).includes(initialExamName);
+  const [examSelect, setExamSelect] = useState(isCustomExam ? 'Custom' : initialExamName);
+  const [customExamName, setCustomExamName] = useState(isCustomExam ? initialExamName : '');
+  const [examYear, setExamYear] = useState(String(detail?.examination.examYear ?? new Date().getFullYear()));
+
   const [totalStudents, setTotalStudents] = useState(detail ? String(detail.schoolClass.totalStudents) : '');
   const [includeQuranHifz, setIncludeQuranHifz] = useState(detail?.schoolClass.includeQuranHifz ?? false);
   const [subjects, setSubjects] = useState<SubjectDraft[]>(() =>
@@ -75,7 +94,6 @@ function ClassForm({ detail }: { detail: ClassDetail | null }) {
   const [pendingRemove, setPendingRemove] = useState<SubjectDraft | null>(null);
   const savingRef = useRef(false);
 
-  /** subject id → number of students with a mark for it */
   const markCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const student of detail?.students ?? []) {
@@ -83,18 +101,6 @@ function ClassForm({ detail }: { detail: ClassDetail | null }) {
     }
     return counts;
   }, [detail]);
-
-  const quranHifzMarkCount = useMemo(() => {
-    if (!detail) return 0;
-    const ids = detail.allSubjects.filter((s) => s.kind !== 'normal').map((s) => s.id);
-    return (detail.students ?? []).filter((st) => ids.some((id) => st.marks[id] !== undefined)).length;
-  }, [detail]);
-
-  const removedWithMarks = useMemo(() => {
-    if (!detail) return [];
-    const kept = new Set(subjects.map((s) => s.id).filter(Boolean));
-    return detail.config.normalSubjects.filter((s) => !kept.has(s.id) && (markCounts[s.id] ?? 0) > 0);
-  }, [detail, subjects, markCounts]);
 
   function addSubject(name = '') {
     const key = makeKey();
@@ -117,9 +123,15 @@ function ClassForm({ detail }: { detail: ClassDetail | null }) {
     });
   }
 
-  function validate(): FormErrors & { valid: boolean; total: number } {
+  function validate(): FormErrors & { valid: boolean; total: number; parsedYear: number; finalExamName: string } {
     const next: FormErrors = { subjectFields: {} };
     if (!className.trim()) next.className = 'Please enter the class name';
+
+    const finalExamName = (examSelect === 'Custom' ? customExamName : examSelect).trim();
+    if (!finalExamName) next.examName = 'Please enter the examination name';
+
+    const parsedYr = parseYear(examYear);
+    if (!parsedYr.ok) next.examYear = parsedYr.error;
 
     const total = parseTotalStudents(totalStudents);
     if (!total.ok) next.totalStudents = total.error;
@@ -137,19 +149,30 @@ function ClassForm({ detail }: { detail: ClassDetail | null }) {
     if (subjects.length === 0 && !includeQuranHifz) next.subjects = 'Please add at least one subject';
 
     const valid =
-      !next.className && !next.totalStudents && !next.subjects && Object.keys(next.subjectFields).length === 0;
-    return { ...next, valid, total: total.ok ? total.value : 0 };
+      !next.className &&
+      !next.examName &&
+      !next.examYear &&
+      !next.totalStudents &&
+      !next.subjects &&
+      Object.keys(next.subjectFields).length === 0;
+
+    return {
+      ...next,
+      valid,
+      total: total.ok ? total.value : 0,
+      parsedYear: parsedYr.ok ? parsedYr.value : new Date().getFullYear(),
+      finalExamName,
+    };
   }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    if (savingRef.current) return; // protect against double submit
+    if (savingRef.current) return;
     setSaveError(null);
 
     const result = validate();
     setErrors(result);
     if (!result.valid) {
-      // Focus first invalid field
       requestAnimationFrame(() => {
         const el = document.querySelector<HTMLInputElement>('[aria-invalid="true"]');
         el?.focus();
@@ -160,46 +183,47 @@ function ClassForm({ detail }: { detail: ClassDetail | null }) {
     savingRef.current = true;
     setSaving(true);
     try {
-      const id = await saveClass(detail?.schoolClass.id ?? null, {
+      const res = await saveClass(detail?.schoolClass.id ?? null, {
         institutionName: institutionName.trim(),
         institutionLocation: institutionLocation.trim(),
+        rangeName: rangeName.trim(),
         className: className.trim(),
+        examName: result.finalExamName,
+        examYear: result.parsedYear,
         totalStudents: result.total,
         includeQuranHifz,
         subjects: subjects.map((s) => ({ id: s.id, name: s.name.trim() })),
       });
       saveInstitution({ name: institutionName.trim(), location: institutionLocation.trim() });
-      navigate(paths.classPage(id));
+      navigate(paths.classPage(res.classId, res.examId));
     } catch (err) {
-      setSaveError(handleError(err, isEdit ? 'Could not update the class.' : 'Could not create the class.'));
+      setSaveError(handleError(err, isEdit ? 'Could not update class.' : 'Could not create class.'));
       savingRef.current = false;
       setSaving(false);
     }
   }
 
-  const entered = detail?.students.length ?? 0;
-  const totalParsed = parseTotalStudents(totalStudents);
-
   return (
     <div className="mx-auto max-w-2xl">
       <a
-        href={isEdit ? paths.classPage(detail.schoolClass.id) : paths.dashboard()}
+        href={isEdit ? paths.classPage(detail.schoolClass.id, detail.examination.id) : paths.dashboard()}
         className="mb-4 inline-flex min-h-10 items-center gap-1.5 rounded-md text-sm font-medium text-slate-600 hover:text-slate-900"
       >
         <ArrowLeftIcon className="size-4" />
         {isEdit ? 'Back to mark list' : 'All classes'}
       </a>
-      <h1 className="text-2xl font-bold tracking-tight text-slate-900">{isEdit ? 'Edit Class' : 'Create New Class'}</h1>
+      <h1 className="text-2xl font-bold tracking-tight text-slate-900">{isEdit ? 'Edit Class Configuration' : 'Create New Class'}</h1>
       <p className="mt-1 text-sm text-slate-500">
-        {isEdit ? 'Update the class details and subjects.' : 'Set up the class and its subjects. You can change these later.'}
+        Set up institution details, examination, class name, and subject structure.
       </p>
 
       <form className="mt-6 space-y-5" onSubmit={(e) => void handleSubmit(e)} noValidate>
+        {/* Institution & Range */}
         <fieldset className="card space-y-4 p-4 sm:p-6">
-          <legend className="sr-only">Institution information</legend>
-          <h2 className="text-base font-semibold text-slate-900">Institution</h2>
+          <legend className="sr-only">Institution details</legend>
+          <h2 className="text-base font-semibold text-slate-900">Institution &amp; Organizational Details</h2>
           <TextField
-            label="Institution name"
+            label="Institution / Madrasa Name"
             id="institution-name"
             value={institutionName}
             onChange={(e) => setInstitutionName(e.target.value)}
@@ -207,52 +231,110 @@ function ClassForm({ detail }: { detail: ClassDetail | null }) {
             maxLength={200}
             autoComplete="organization"
           />
-          <TextField
-            label="Institution location"
-            id="institution-location"
-            value={institutionLocation}
-            onChange={(e) => setInstitutionLocation(e.target.value)}
-            placeholder="e.g. Chemmad, Malappuram"
-            maxLength={200}
-          />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <TextField
+              label="Location"
+              id="institution-location"
+              value={institutionLocation}
+              onChange={(e) => setInstitutionLocation(e.target.value)}
+              placeholder="e.g. Chemmad, Malappuram"
+              maxLength={200}
+            />
+            <TextField
+              label="Range Name"
+              id="range-name"
+              value={rangeName}
+              onChange={(e) => setRangeName(e.target.value)}
+              placeholder="e.g. Tirur Range"
+              maxLength={200}
+              hint="Organizational Range/Zone for Madrasas"
+            />
+          </div>
         </fieldset>
 
+        {/* Examination & Class Details */}
         <fieldset className="card space-y-4 p-4 sm:p-6">
-          <legend className="sr-only">Class information</legend>
-          <h2 className="text-base font-semibold text-slate-900">Class</h2>
-          <TextField
-            label={<>Class name <span className="text-fail-700">*</span></>}
-            id="class-name"
-            value={className}
-            onChange={(e) => setClassName(e.target.value)}
-            placeholder="e.g. 6th Standard"
-            maxLength={100}
-            required
-            error={errors.className}
-          />
-          <TextField
-            label={<>Total students in class <span className="text-fail-700">*</span></>}
-            id="total-students"
-            value={totalStudents}
-            onChange={(e) => setTotalStudents(e.target.value)}
-            placeholder="e.g. 32"
-            inputMode="numeric"
-            pattern="[0-9]*"
-            required
-            error={errors.totalStudents}
-            hint={
-              isEdit && totalParsed.ok && totalParsed.value < entered
-                ? `Note: ${entered} students are already entered, which is more than this number.`
-                : 'The full class strength, including students who may be absent.'
-            }
-          />
+          <legend className="sr-only">Class &amp; Exam details</legend>
+          <h2 className="text-base font-semibold text-slate-900">Class &amp; Examination Setup</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <TextField
+              label={<>Class Name <span className="text-fail-700">*</span></>}
+              id="class-name"
+              value={className}
+              onChange={(e) => setClassName(e.target.value)}
+              placeholder="e.g. 6th Standard"
+              maxLength={100}
+              required
+              error={errors.className}
+            />
+            <TextField
+              label={<>Total Students <span className="text-fail-700">*</span></>}
+              id="total-students"
+              value={totalStudents}
+              onChange={(e) => setTotalStudents(e.target.value)}
+              placeholder="e.g. 32"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              required
+              error={errors.totalStudents}
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+            <div>
+              <label htmlFor="exam-select" className="mb-1.5 block text-sm font-medium text-slate-700">
+                Examination Name <span className="text-fail-700">*</span>
+              </label>
+              <select
+                id="exam-select"
+                className="field-input"
+                value={examSelect}
+                onChange={(e) => setExamSelect(e.target.value)}
+              >
+                {COMMON_EXAMS.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+              {examSelect === 'Custom' && (
+                <input
+                  id="custom-exam-name"
+                  type="text"
+                  className="field-input mt-2"
+                  placeholder="Enter custom examination name..."
+                  value={customExamName}
+                  onChange={(e) => setCustomExamName(e.target.value)}
+                  maxLength={100}
+                />
+              )}
+              {errors.examName && (
+                <p className="mt-1.5 text-sm font-medium text-fail-700" role="alert">
+                  {errors.examName}
+                </p>
+              )}
+            </div>
+
+            <TextField
+              label={<>Exam Year <span className="text-fail-700">*</span></>}
+              id="exam-year"
+              value={examYear}
+              onChange={(e) => setExamYear(e.target.value)}
+              placeholder="e.g. 2026"
+              inputMode="numeric"
+              maxLength={4}
+              required
+              error={errors.examYear}
+            />
+          </div>
         </fieldset>
 
+        {/* Subjects */}
         <fieldset className="card space-y-4 p-4 sm:p-6">
           <legend className="sr-only">Subjects</legend>
           <div>
-            <h2 className="text-base font-semibold text-slate-900">Subjects</h2>
-            <p className="mt-0.5 text-sm text-slate-500">Each subject is out of 100. Pass mark is 40.</p>
+            <h2 className="text-base font-semibold text-slate-900">Subjects Structure</h2>
+            <p className="mt-0.5 text-sm text-slate-500">Pass mark is 40 for each subject.</p>
           </div>
           {errors.subjects && <Alert tone="error">{errors.subjects}</Alert>}
           <SubjectEditor
@@ -266,6 +348,7 @@ function ClassForm({ detail }: { detail: ClassDetail | null }) {
           />
         </fieldset>
 
+        {/* Quran + Hifz Toggle */}
         <fieldset className="card p-4 sm:p-6">
           <legend className="sr-only">Special subject</legend>
           <h2 className="text-base font-semibold text-slate-900">Special Subject</h2>
@@ -283,41 +366,27 @@ function ClassForm({ detail }: { detail: ClassDetail | null }) {
             <span>
               <span className="block font-medium text-slate-900">Include Quran &amp; Hifz</span>
               <span className="mt-1 block text-sm text-slate-600">
-                Quran and Hifz are entered separately but evaluated as one subject using their combined total
-                (pass if Quran + Hifz ≥ 40).
+                Quran and Hifz are entered separately but evaluated as one combined subject (Pass if Quran + Hifz ≥ 40).
               </span>
             </span>
           </label>
-          {isEdit && detail.schoolClass.includeQuranHifz && !includeQuranHifz && quranHifzMarkCount > 0 && (
-            <Alert tone="warning" className="mt-3">
-              {quranHifzMarkCount} student(s) already have Quran/Hifz marks. Turning this off hides those marks and removes them
-              from totals and results. The marks are kept, so turning it back on restores them.
-            </Alert>
-          )}
         </fieldset>
-
-        {removedWithMarks.length > 0 && (
-          <Alert tone="warning" title="Marks will be deleted">
-            Saving will permanently delete all marks for:{' '}
-            <strong>{removedWithMarks.map((s) => s.name).join(', ')}</strong>.
-          </Alert>
-        )}
 
         {saveError && <Alert tone="error">{saveError}</Alert>}
 
         <div className="flex flex-col-reverse gap-3 pb-4 sm:flex-row sm:justify-end">
-          <LinkButton href={isEdit ? paths.classPage(detail.schoolClass.id) : paths.dashboard()} variant="secondary" size="lg">
+          <LinkButton href={isEdit ? paths.classPage(detail.schoolClass.id, detail.examination.id) : paths.dashboard()} variant="secondary" size="lg">
             Cancel
           </LinkButton>
           <Button type="submit" size="lg" loading={saving} id="save-class-button">
-            {saving ? (isEdit ? 'Saving changes…' : 'Creating class…') : isEdit ? 'Save Changes' : 'Create Class'}
+            {saving ? (isEdit ? 'Saving changes...' : 'Creating class...') : isEdit ? 'Save Changes' : 'Create Class'}
           </Button>
         </div>
       </form>
 
       <ConfirmDialog
         open={pendingRemove !== null}
-        title={`Remove “${pendingRemove?.name ?? ''}”?`}
+        title={`Remove "${pendingRemove?.name ?? ''}"?`}
         confirmLabel="Remove subject"
         danger
         onCancel={() => setPendingRemove(null)}
@@ -326,16 +395,7 @@ function ClassForm({ detail }: { detail: ClassDetail | null }) {
           setPendingRemove(null);
         }}
       >
-        <p>
-          <strong>
-            {pendingRemove?.id ? markCounts[pendingRemove.id] ?? 0 : 0} student(s)
-          </strong>{' '}
-          already have marks for this subject.
-        </p>
-        <p>
-          When you save the class, these marks will be <strong>permanently deleted</strong>. You can still cancel the whole
-          edit without saving.
-        </p>
+        <p>Removing a subject will delete marks entered for it upon saving.</p>
       </ConfirmDialog>
     </div>
   );

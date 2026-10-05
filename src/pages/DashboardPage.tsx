@@ -24,7 +24,7 @@ export function DashboardPage() {
     const q = query.trim().toLowerCase();
     if (!q) return classes;
     return classes.filter((c) =>
-      `${c.className} ${c.institutionName} ${c.institutionLocation}`.toLowerCase().includes(q),
+      `${c.className} ${c.institutionName} ${c.institutionLocation} ${c.rangeName}`.toLowerCase().includes(q),
     );
   }, [classes, query]);
 
@@ -53,8 +53,8 @@ export function DashboardPage() {
     <div className="space-y-6">
       <section className="space-y-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">School Mark List</h1>
-          <p className="mt-1 text-sm text-slate-500">Create a class, enter marks, and print the official mark list.</p>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">School Mark List Portal</h1>
+          <p className="mt-1 text-sm text-slate-500">Configure classes, manage student marks, and print official mark sheets.</p>
         </div>
 
         <div className="grid gap-3 sm:grid-cols-[auto_1fr] sm:items-end">
@@ -73,7 +73,7 @@ export function DashboardPage() {
                 value=""
                 onChange={(e) => e.target.value && navigate(paths.classPage(e.target.value))}
               >
-                <option value="">Choose a class…</option>
+                <option value="">Choose a class...</option>
                 {sortedForSelect.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.className}
@@ -103,7 +103,7 @@ export function DashboardPage() {
                 id="class-search"
                 type="search"
                 className="field-input pl-10"
-                placeholder="Search class…"
+                placeholder="Search class or location..."
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 autoComplete="off"
@@ -114,7 +114,6 @@ export function DashboardPage() {
 
         {loading && (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3" role="status" aria-label="Loading classes">
-            <span className="sr-only">Loading classes…</span>
             {[0, 1, 2].map((i) => (
               <div key={i} className="card space-y-3 p-5">
                 <Skeleton className="h-6 w-2/3" />
@@ -143,7 +142,7 @@ export function DashboardPage() {
         {!loading && !error && classes.length === 0 && (
           <EmptyState
             title="No classes created yet"
-            description="Start by creating your first class. You will add its subjects and then enter each student's marks."
+            description="Start by creating your first class. Define institution info, range, exam details, and subjects."
             action={
               <LinkButton href={paths.newClass()} variant="primary" icon={<PlusIcon />}>
                 Create your first class
@@ -155,7 +154,7 @@ export function DashboardPage() {
         {!loading && !error && classes.length > 0 && filtered.length === 0 && (
           <EmptyState
             title="No matching classes"
-            description={<>No class matches “{query}”. Try a different search.</>}
+            description={<>No class matches "{query}".</>}
             action={
               <Button variant="secondary" onClick={() => setQuery('')}>
                 Clear search
@@ -175,7 +174,7 @@ export function DashboardPage() {
 
       <ConfirmDialog
         open={toDelete !== null}
-        title={`Delete “${toDelete?.className ?? ''}”?`}
+        title={`Delete "${toDelete?.className ?? ''}"?`}
         confirmLabel="Delete class"
         danger
         loading={deleting}
@@ -183,10 +182,8 @@ export function DashboardPage() {
         onConfirm={() => void confirmDelete()}
       >
         <p>
-          This will <strong>permanently delete</strong> the class, its subjects, all{' '}
-          <strong>{toDelete?.studentCount ?? 0} student(s)</strong> and all their marks.
+          This will <strong>permanently delete</strong> the class, all associated examinations, subjects, students and marks.
         </p>
-        <p>This cannot be undone.</p>
       </ConfirmDialog>
     </div>
   );
