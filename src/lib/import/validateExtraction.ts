@@ -131,7 +131,6 @@ export function validateExtraction(raw: unknown): ExtractionResult {
 
     const category: ExtractedCategory | null = s.category === 'boys' || s.category === 'girls' ? s.category : null;
     const rollNumber = intInRange(s.rollNumber, 1, 99999);
-    const admissionNumber = cleanText(s.admissionNumber, 50);
     const name = cleanText(s.name, MAX_NAME_LENGTH);
     const studentBox = parseBox(s.box);
 
@@ -167,16 +166,14 @@ export function validateExtraction(raw: unknown): ExtractionResult {
     }
 
     // Skip rows that carry no information at all
-    if (name === null && rollNumber === null && admissionNumber === null && cells.every((c) => c.status === 'blank')) continue;
+    if (name === null && rollNumber === null && cells.every((c) => c.status === 'blank')) continue;
 
     students.push({
       category,
       rollNumber,
-      admissionNumber,
       name,
       categoryConfidence: category === null ? 'low' : confidenceOf(s.categoryConfidence),
       rollConfidence: rollNumber === null ? 'low' : confidenceOf(s.rollConfidence),
-      admissionConfidence: admissionNumber === null ? 'low' : confidenceOf(s.admissionConfidence),
       nameConfidence: name === null ? 'low' : confidenceOf(s.nameConfidence),
       box: studentBox,
       cells,
@@ -199,8 +196,6 @@ export function validateExtraction(raw: unknown): ExtractionResult {
   const exName = cleanText(exam.examName ?? exam.name, 100);
   const exYr = intInRange(exam.examYear ?? exam.year, 2000, 2100);
   const clsName = cleanText(meta.className ?? raw.className, 100);
-  const divName = cleanText(meta.division, 20);
-  const exDate = cleanText(meta.examDate, 50);
 
   const documentMetadata: DocumentMetadata = {
     institutionName: instName,
@@ -209,8 +204,6 @@ export function validateExtraction(raw: unknown): ExtractionResult {
     examName: exName,
     examYear: exYr,
     className: clsName,
-    division: divName,
-    examDate: exDate,
     confidence: {
       institutionName: instName === null ? 'low' : confidenceOf(confObj.institutionName),
       location: loc === null ? 'low' : confidenceOf(confObj.location),
@@ -218,8 +211,6 @@ export function validateExtraction(raw: unknown): ExtractionResult {
       examName: exName === null ? 'low' : confidenceOf(confObj.examName),
       examYear: exYr === null ? 'low' : confidenceOf(confObj.examYear),
       className: clsName === null ? 'low' : confidenceOf(confObj.className),
-      division: divName === null ? 'low' : confidenceOf(confObj.division),
-      examDate: exDate === null ? 'low' : confidenceOf(confObj.examDate),
     },
   };
 

@@ -10,6 +10,7 @@ import { evaluateStudent, requiredSubjectIds } from '../calculations/marks';
 import { parseMark, parseRollNumber, suggestNextRollNumber, type TranslateFn } from '../../utils/validation';
 import { formatMark, makeKey } from '../../utils/format';
 import { matchColumns, normalizeSubjectText, type ColumnMapping } from './subjectMatching';
+import { buildClassConfig } from '../supabase/api';
 import type { BoundingBox, ClassSubjectInfo, Confidence, ExtractedCell, ExtractedColumn, ExtractionResult } from './types';
 
 /* ------------------------------------------------------------------ */
@@ -25,13 +26,12 @@ export interface DraftRow {
   roll: string;
   /** True when the roll number was not readable and was assigned with the app's own rule. */
   rollAssigned: boolean;
-  admissionNumber: string;
   name: string;
   absent: boolean;
   /** subjectId → raw input text (same representation StudentForm uses) */
   marks: Record<string, string>;
   /** Fields flagged "please check". Cleared when the teacher edits the field. */
-  review: { category: boolean; roll: boolean; admission: boolean; name: boolean; marks: Record<string, boolean> };
+  review: { category: boolean; roll: boolean; name: boolean; marks: Record<string, boolean> };
   /** Source cells keyed by photo column index (kept so the column mapping can be changed). */
   cells: Record<number, ExtractedCell>;
   importedGrandTotal: number | null;
@@ -45,10 +45,8 @@ export interface DraftHeader {
   institutionLocation: string;
   rangeName: string;
   className: string;
-  division: string;
   examName: string;
   examYear: string;
-  examDate: string;
   confidence: Record<string, Confidence>;
 }
 
@@ -126,14 +124,12 @@ export function createSyntheticDetail(header: DraftHeader, detectedSubjects: Det
   const quranSubject = subjects.find((s) => s.kind === 'quran') ?? null;
   const hifzSubject = subjects.find((s) => s.kind === 'hifz') ?? null;
 
-  const fullClassName = header.division ? `${header.className} ${header.division}`.trim() : header.className;
-
   const schoolClass: SchoolClass = {
     id: 'synth-class',
     institutionName: header.institutionName,
     institutionLocation: header.institutionLocation,
     rangeName: header.rangeName,
-    className: fullClassName || 'New Class',
+    className: header.className || 'New Class',
     totalStudents: 0,
     includeQuranHifz,
     createdAt: new Date().toISOString(),
@@ -166,7 +162,7 @@ export function createSyntheticDetail(header: DraftHeader, detectedSubjects: Det
 /* Draft creation                                                      */
 /* ------------------------------------------------------------------ */
 
-const emptyReview = (): DraftRow['review'] => ({ category: false, roll: false, admission: false, name: false, marks: {} });
+const emptyReview = (): DraftRow['review'] => ({ category: false, roll: false, name: false, marks: {} });
 
 export function newBlankRow(detail: ClassDetail, rows: DraftRow[], category: StudentCategory = 'boys'): DraftRow {
   const next = suggestNextRollNumber([
@@ -178,7 +174,6 @@ export function newBlankRow(detail: ClassDetail, rows: DraftRow[], category: Stu
     category,
     roll: String(next),
     rollAssigned: false,
-    admissionNumber: '',
     name: '',
     absent: false,
     marks: {},
@@ -218,10 +213,37 @@ function applyCells(row: DraftRow, mapping: ColumnMapping, subjects: Subject[]):
   if (row.absent) row.review.marks = {};
 }
 
+import { loadInstitution } from '../../utils/storage';
+
+export const STANDARD_EXAMS = [
+  'Half-Yearly Examination',
+  'Annual Examination',
+  'Quarterly Examination',
+  'Monthly Examination',
+  'Model Examination',
+] as const;
+
+export function matchStandardExam(ocrExamText: string | null | undefined): string {
+  if (!ocrExamText) return '';
+  const text = ocrExamText.toLowerCase().trim();
+  if (/half/i.test(text) || /അർദ്ധ/i.test(text)) return 'Half-Yearly Examination';
+  if (/annual|final|yearly|വാർഷിക/i.test(text)) return 'Annual Examination';
+  if (/quarter|പാദ/i.test(text)) return 'Quarterly Examination';
+  if (/month|മാസാന്ത/i.test(text)) return 'Monthly Examination';
+  if (/model|മോഡൽ/i.test(text)) return 'Model Examination';
+
+  const exact = STANDARD_EXAMS.find((e) => e.toLowerCase() === text);
+  if (exact) return exact;
+
+  return ocrExamText.trim();
+}
+
 export function buildDraft(extraction: ExtractionResult, detail?: ClassDetail | null): ImportDraft {
   const rawMeta: any = extraction.documentMetadata ?? (extraction as any).header ?? {};
   const rawInst = (extraction as any).institution;
   const rawExam = (extraction as any).exam;
+
+  const remembered = loadInstitution();
 
   const detectedSubjects: DetectedSubject[] = (extraction.columns ?? [])
     .filter((c) => c.kind === 'subject' || c.kind === 'quran' || c.kind === 'hifz')
@@ -233,20 +255,20 @@ export function buildDraft(extraction: ExtractionResult, detail?: ClassDetail | 
       confidence: c.confidence,
     }));
 
+  const ocrExam = rawMeta.examName ?? rawExam?.name ?? '';
+
   const header: DraftHeader = {
-    institutionName: rawMeta.institutionName ?? rawInst?.name ?? '',
-    institutionLocation: rawMeta.location ?? rawInst?.location ?? '',
+    institutionName: rawMeta.institutionName ?? rawInst?.name ?? remembered.name ?? '',
+    institutionLocation: rawMeta.location ?? rawInst?.location ?? remembered.location ?? '',
     rangeName: rawMeta.range ?? rawInst?.range ?? '',
     className: rawMeta.className ?? (extraction as any).className ?? '',
-    division: rawMeta.division ?? '',
-    examName: rawMeta.examName ?? rawExam?.name ?? '',
+    examName: matchStandardExam(ocrExam),
     examYear:
       rawMeta.examYear !== undefined && rawMeta.examYear !== null
         ? String(rawMeta.examYear)
         : rawExam?.year !== undefined && rawExam?.year !== null
           ? String(rawExam.year)
-          : '',
-    examDate: rawMeta.examDate ?? '',
+          : String(new Date().getFullYear()),
     confidence: rawMeta.confidence ?? {
       institutionName: 'high',
       location: 'high',
@@ -254,8 +276,6 @@ export function buildDraft(extraction: ExtractionResult, detail?: ClassDetail | 
       examName: 'high',
       examYear: 'high',
       className: 'high',
-      division: 'high',
-      examDate: 'high',
     },
   };
 
@@ -273,16 +293,14 @@ export function buildDraft(extraction: ExtractionResult, detail?: ClassDetail | 
     const row: DraftRow = {
       key: makeKey(),
       category: s.category ?? '',
-      roll: s.rollNumber !== null ? String(s.rollNumber) : '',
+      roll: '',
       rollAssigned: false,
-      admissionNumber: s.admissionNumber ?? '',
       name: s.name ?? '',
       absent: false,
       marks: {},
       review: {
         category: s.category === null || s.categoryConfidence !== 'high',
-        roll: s.rollNumber === null || s.rollConfidence !== 'high',
-        admission: s.admissionNumber === null || s.admissionConfidence !== 'high',
+        roll: false,
         name: s.name === null || s.nameConfidence !== 'high',
         marks: {},
       },
@@ -309,21 +327,37 @@ export function buildDraft(extraction: ExtractionResult, detail?: ClassDetail | 
   };
 }
 
-/** Missing roll numbers are assigned using the app's own rule: highest roll in that category + 1. */
+/** Roll numbers are assigned sequentially per category starting at 1 (restarting at 1 for Girls). Photo Admission Numbers are ignored. */
 export function assignMissingRolls(rows: DraftRow[], detail: ClassDetail): void {
   for (const category of ['boys', 'girls'] as StudentCategory[]) {
-    const used = [
-      ...detail.students.filter((s) => s.category === category).map((s) => s.rollNumber),
-      ...rows.filter((r) => r.category === category && r.roll.trim() !== '').map((r) => Number(r.roll)).filter(Number.isFinite),
-    ];
-    for (const r of rows) {
-      if (r.category === category && r.roll.trim() === '') {
-        const next = suggestNextRollNumber(used);
-        r.roll = String(next);
-        r.review.roll = true;
-        r.rollAssigned = true;
-        used.push(next);
+    const existingStudents = detail.students.filter((s) => s.category === category);
+    const used = [...existingStudents.map((s) => s.rollNumber)];
+    const categoryRows = rows.filter((r) => r.category === category);
+
+    for (const r of categoryRows) {
+      if (r.roll.trim() === '') {
+        const normName = normalizeSubjectText(r.name);
+        const match = normName ? existingStudents.find((s) => normalizeSubjectText(s.studentName) === normName) : undefined;
+        if (match) {
+          r.roll = String(match.rollNumber);
+          r.rollAssigned = false;
+          r.review.roll = false;
+        } else {
+          const next = suggestNextRollNumber(used);
+          r.roll = String(next);
+          r.rollAssigned = false;
+          r.review.roll = false;
+          used.push(next);
+        }
       }
+    }
+  }
+
+  for (const r of rows) {
+    if (r.category === '') {
+      r.roll = '';
+      r.rollAssigned = true;
+      r.review.roll = true;
     }
   }
 }
@@ -484,25 +518,83 @@ export function findTotalMismatches(row: DraftRow, detail: ClassDetail): TotalMi
 /* Save                                                                */
 /* ------------------------------------------------------------------ */
 
-/** Builds the exact inputs the existing `saveStudent` RPC wrapper expects. Throws if the row is not valid. */
+/**
+ * Updates the name of a detected subject in the draft and detail.
+ * Ensures teacher edits to OCR subject names persist through subject creation to the database.
+ */
+export function updateSubjectName(
+  draft: ImportDraft,
+  detail: ClassDetail,
+  subjectId: string,
+  newName: string,
+): { draft: ImportDraft; detail: ClassDetail } {
+  const trimmedName = newName.trim();
+  const nextDetected = draft.detectedSubjects.map((s) => (s.id === subjectId ? { ...s, name: trimmedName || s.name } : s));
+
+  const nextMatches = draft.mapping.matches.map((m) => (m.subjectId === subjectId ? { ...m, header: trimmedName || m.header } : m));
+
+  const nextDraft: ImportDraft = {
+    ...draft,
+    detectedSubjects: nextDetected,
+    mapping: {
+      ...draft.mapping,
+      matches: nextMatches,
+    },
+  };
+
+  const nextSubjects: Subject[] = detail.allSubjects.map((s) => (s.id === subjectId ? { ...s, name: trimmedName || s.name } : s));
+
+  const nextDetail: ClassDetail = {
+    ...detail,
+    allSubjects: nextSubjects,
+    config: buildClassConfig(detail.schoolClass, nextSubjects),
+  };
+
+  return { draft: nextDraft, detail: nextDetail };
+}
+
+/** A student row is saveable as long as it has a valid category, non-empty name, and valid roll number. */
+export function isStudentSaveable(row: DraftRow, _detail?: ClassDetail, v?: RowValidation): boolean {
+  if (row.category === '' || !row.category) return false;
+  if (!row.name || !row.name.trim()) return false;
+  const rollRes = parseRollNumber(row.roll);
+  if (!rollRes.ok) return false;
+  if (v?.duplicate && row.duplicateChoice === 'undecided') return false;
+  if (v?.errors.category || v?.errors.roll || v?.errors.name || v?.errors.duplicate) return false;
+  return true;
+}
+
+/** Builds the exact inputs the existing `saveStudent` RPC wrapper expects. Throws if the row is not saveable. */
 export function toStudentInput(row: DraftRow, detail: ClassDetail, validation: RowValidation): StudentInput {
-  if (!validation.ok || row.category === '') throw new Error('Row is not valid');
+  if (!isStudentSaveable(row, detail, validation)) {
+    throw new Error(`Row for "${row.name || `Roll ${row.roll}`}" is not valid to save`);
+  }
   const roll = Number(row.roll);
   const update = validation.duplicate !== null && row.duplicateChoice === 'update';
+  const parsed = numericMarks(row, detail);
+
+  const marksList: { subjectId: string; marks: number }[] = [];
+  if (!row.absent) {
+    for (const s of detail.allSubjects) {
+      const val = parsed[s.id];
+      if (typeof val === 'number' && Number.isFinite(val)) {
+        marksList.push({ subjectId: s.id, marks: val });
+      }
+    }
+  }
+
   return {
     examId: detail.examination.id,
     studentId: update ? validation.duplicate!.id : null,
-    category: row.category,
+    category: row.category as StudentCategory,
     rollNumber: roll,
     studentName: row.name.trim(),
     isAbsent: row.absent,
-    marks: row.absent
-      ? []
-      : requiredSubjectIds(detail.config).map((id) => ({ subjectId: id, marks: numericMarks(row, detail)[id] })),
+    marks: marksList,
   };
 }
 
-/** All rows → inputs for the existing `saveStudent`. Rows must already be valid; invalid rows are skipped. */
+/** All rows → inputs for the existing `saveStudent`. Rows must be saveable; invalid rows are skipped. */
 export function buildPhotoSaveBatch(
   rows: DraftRow[],
   detail: ClassDetail,
@@ -511,10 +603,76 @@ export function buildPhotoSaveBatch(
   const batch: { key: string; input: StudentInput }[] = [];
   for (const row of rows) {
     const v = validations.get(row.key);
-    if (!v || !v.ok) continue;
+    if (!v || !isStudentSaveable(row, detail, v)) continue;
     batch.push({ key: row.key, input: toStudentInput(row, detail, v) });
   }
   return batch;
+}
+
+/** Builds a map from temporary frontend subject IDs (subj-col-0, etc.) to real database subject UUIDs. */
+export function buildSubjectIdMap(synthSubjects: Subject[], savedDetail: ClassDetail): Record<string, string> {
+  const map: Record<string, string> = {};
+  const availableSavedNormal = [...savedDetail.config.normalSubjects];
+
+  for (const synth of synthSubjects) {
+    if (synth.kind === 'quran' && savedDetail.config.quranSubject) {
+      map[synth.id] = savedDetail.config.quranSubject.id;
+    } else if (synth.kind === 'hifz' && savedDetail.config.hifzSubject) {
+      map[synth.id] = savedDetail.config.hifzSubject.id;
+    } else if (synth.kind === 'normal') {
+      const synthNorm = normalizeSubjectText(synth.name);
+      const matchIdx = availableSavedNormal.findIndex(
+        (s) => s.name === synth.name || normalizeSubjectText(s.name) === synthNorm,
+      );
+      if (matchIdx !== -1) {
+        map[synth.id] = availableSavedNormal[matchIdx].id;
+        availableSavedNormal.splice(matchIdx, 1);
+      } else if (availableSavedNormal.length > 0) {
+        const fallback = availableSavedNormal.shift()!;
+        map[synth.id] = fallback.id;
+      }
+    }
+  }
+
+  return map;
+}
+
+/** Remaps draft rows from temporary synthetic subject IDs to real database UUIDs after class creation. */
+export function remapRowsToSavedDetail(
+  rows: DraftRow[],
+  synthDetail: ClassDetail,
+  savedDetail: ClassDetail,
+): DraftRow[] {
+  const idMap = buildSubjectIdMap(synthDetail.allSubjects, savedDetail);
+
+  console.log('[ImportSave] Resolving temporary subject IDs to real database UUIDs:');
+  for (const [synthId, realUuid] of Object.entries(idMap)) {
+    const synthSubj = synthDetail.allSubjects.find((s) => s.id === synthId);
+    const savedSubj = savedDetail.allSubjects.find((s) => s.id === realUuid);
+    console.log(`[ImportSave]   ${synthId} ("${synthSubj?.name ?? 'unknown'}") → ${realUuid} ("${savedSubj?.name ?? 'unknown'}")`);
+  }
+
+  return rows.map((r) => {
+    const newMarks: Record<string, string> = {};
+    const newReviewMarks: Record<string, boolean> = {};
+
+    for (const [synthId, val] of Object.entries(r.marks)) {
+      const realUuid = idMap[synthId];
+      if (realUuid) {
+        newMarks[realUuid] = val;
+        newReviewMarks[realUuid] = r.review.marks[synthId] ?? false;
+      }
+    }
+
+    return {
+      ...r,
+      marks: newMarks,
+      review: {
+        ...r.review,
+        marks: newReviewMarks,
+      },
+    };
+  });
 }
 
 /** "8 students detected. 12 students may be missing from the image." */

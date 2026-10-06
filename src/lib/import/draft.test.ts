@@ -4,11 +4,15 @@ import { buildClassConfig } from '../supabase/api';
 import {
   buildDraft,
   buildPhotoSaveBatch,
+  createSyntheticDetail,
   evaluateRow,
   findPossibleDuplicate,
   findTotalMismatches,
   missingStudentEstimate,
   remapColumn,
+  remapRowsToSavedDetail,
+  toStudentInput,
+  updateSubjectName,
   validateRow,
   type DraftRow,
   type RowValidation,
@@ -62,11 +66,9 @@ function student(over: Partial<ExtractedStudent>): ExtractedStudent {
   return {
     category: 'boys',
     rollNumber: 1,
-    admissionNumber: null,
     name: 'Unais',
     categoryConfidence: 'high',
     rollConfidence: 'high',
-    admissionConfidence: 'high',
     nameConfidence: 'high',
     cells: [],
     ...over,
@@ -82,8 +84,6 @@ function extraction(students: ExtractedStudent[]): ExtractionResult {
       examName: null,
       examYear: null,
       className: null,
-      division: null,
-      examDate: null,
       confidence: {
         institutionName: 'high',
         location: 'high',
@@ -91,8 +91,6 @@ function extraction(students: ExtractedStudent[]): ExtractionResult {
         examName: 'high',
         examYear: 'high',
         className: 'high',
-        division: 'high',
-        examDate: 'high',
       },
     },
     institution: { name: null, location: null, range: null },
@@ -180,20 +178,57 @@ describe('buildDraft – marks & nulls', () => {
 });
 
 describe('category & roll numbers', () => {
-  it('uses independent roll sequences per category and does not invent when present', () => {
+  it('uses independent sequential roll sequences per category starting at 1 and ignores photo admission numbers', () => {
     const d = buildDraft(
       extraction([
-        student({ category: 'boys', rollNumber: 1 }),
-        student({ category: 'boys', rollNumber: 2, name: 'B' }),
-        student({ category: 'girls', rollNumber: 1, name: 'G' }),
+        student({ category: 'boys', rollNumber: 1190, name: 'Student A' }),
+        student({ category: 'boys', rollNumber: 1191, name: 'Student B' }),
+        student({ category: 'girls', rollNumber: 1163, name: 'Student X' }),
       ]),
       makeDetail(),
     );
     expect(d.rows.map((r) => `${r.category}${r.roll}`)).toEqual(['boys1', 'boys2', 'girls1']);
-    expect(d.rows.some((r) => r.rollAssigned)).toBe(false);
   });
 
-  it('assigns missing roll numbers per category with the existing rule (max + 1) and flags them', () => {
+  it('assigns student with Admission No. 1215 to Roll 1', () => {
+    const d = buildDraft(
+      extraction([student({ category: 'boys', rollNumber: 1215, name: 'Student A' })]),
+      makeDetail(),
+    );
+    expect(d.rows[0].roll).toBe('1');
+    expect(d.rows[0].roll).not.toBe('1215');
+  });
+
+  it('handles 10 boys + 8 girls resulting in Boys 1-10, Girls 1-8, and all 18 can be saved', () => {
+    const detail = makeDetail();
+    const boysList = Array.from({ length: 10 }, (_, i) =>
+      student({ category: 'boys', rollNumber: 1100 + i, name: `Boy ${i + 1}`, cells: full([50, 60, 70, 30, 10]) }),
+    );
+    const girlsList = Array.from({ length: 8 }, (_, i) =>
+      student({ category: 'girls', rollNumber: 1200 + i, name: `Girl ${i + 1}`, cells: full([50, 60, 70, 30, 10]) }),
+    );
+
+    const d = buildDraft(extraction([...boysList, ...girlsList]), detail);
+
+    const boysRolls = d.rows.filter((r) => r.category === 'boys').map((r) => r.roll);
+    const girlsRolls = d.rows.filter((r) => r.category === 'girls').map((r) => r.roll);
+
+    expect(boysRolls).toEqual(['1', '2', '3', '4', '5', '6', '7', '8', '9', '10']);
+    expect(girlsRolls).toEqual(['1', '2', '3', '4', '5', '6', '7', '8']);
+
+    // Validate all 18 rows
+    const validations = new Map<string, RowValidation>();
+    for (const row of d.rows) {
+      const v = validate(row, d.rows, detail);
+      expect(v.ok).toBe(true);
+      validations.set(row.key, v);
+    }
+
+    const batch = buildPhotoSaveBatch(d.rows, detail, validations);
+    expect(batch).toHaveLength(18);
+  });
+
+  it('assigns missing roll numbers per category with the existing rule and flags empty categories', () => {
     const existing: Student[] = [{ id: 's1', examId: 'e1', category: 'girls', rollNumber: 4, studentName: 'Old', marks: {} }];
     const d = buildDraft(
       extraction([
@@ -204,7 +239,6 @@ describe('category & roll numbers', () => {
       makeDetail({ students: existing }),
     );
     expect(d.rows.map((r) => r.roll)).toEqual(['1', '2', '5']);
-    expect(d.rows.every((r) => r.rollAssigned && r.review.roll)).toBe(true);
   });
 
   it('does not silently assign an unknown category: it must be chosen', () => {
@@ -220,8 +254,13 @@ describe('category & roll numbers', () => {
   it('rejects the same roll twice within one category in the import', () => {
     const detail = makeDetail();
     const d = buildDraft(extraction([student({ rollNumber: 3, cells: full([50, 60, 70, 30, 10]) }), student({ rollNumber: 3, name: 'X', cells: full([50, 60, 70, 30, 10]) })]), detail);
+    // Both boys rows get sequential rolls 1 and 2 automatically
+    expect(d.rows[0].roll).toBe('1');
+    expect(d.rows[1].roll).toBe('2');
+    // Manually forcing duplicate roll 1 triggers error
+    d.rows[1].roll = '1';
     expect(validate(d.rows[0], d.rows, detail).errors.roll).toContain('errRollDuplicateInImport');
-    // but boys 3 and girls 3 are fine
+    // but boys 1 and girls 1 are fine
     d.rows[1].category = 'girls';
     expect(validate(d.rows[0], d.rows, detail).errors.roll).toBeUndefined();
   });
@@ -380,5 +419,71 @@ describe('partial imports & remapping', () => {
     d = remapColumn(d, detail, 7, null); // ignore
     expect(d.rows[0].marks.thazkiya).toBe('');
     expect(d.rows[0].review.marks.thazkiya).toBe(true);
+  });
+});
+
+describe('subject ID to UUID resolution', () => {
+  it('resolves synthetic subject IDs (subj-col-0) to real database UUIDs', () => {
+    const synthDetail = buildDraft(extraction([student({ cells: full([50, 60, 70, 30, 10]) })])).header ? createSyntheticDetail(
+      { institutionName: 'Inst', institutionLocation: 'Loc', rangeName: 'R', className: '5', examName: 'Annual', examYear: '2026', confidence: {} },
+      [
+        { id: 'subj-col-0', name: 'Fiqh', kind: 'normal', columnIndex: 0, confidence: 'high' },
+        { id: 'subj-col-1', name: 'Duroos', kind: 'normal', columnIndex: 1, confidence: 'high' },
+        { id: 'subj-col-2', name: 'Quran', kind: 'quran', columnIndex: 2, confidence: 'high' },
+        { id: 'subj-col-3', name: 'Hifz', kind: 'hifz', columnIndex: 3, confidence: 'high' },
+      ],
+    ) : makeDetail();
+
+    const uuid1 = '11111111-1111-4111-8111-111111111111';
+    const uuid2 = '22222222-2222-4222-8222-222222222222';
+    const uuidQuran = '33333333-3333-4333-8333-333333333333';
+    const uuidHifz = '44444444-4444-4444-8444-444444444444';
+
+    const savedSubjects: Subject[] = [
+      subj(uuid1, 'Fiqh', 'normal', 0),
+      subj(uuid2, 'Duroos', 'normal', 1),
+      subj(uuidQuran, 'Quran', 'quran', 1000),
+      subj(uuidHifz, 'Hifz', 'hifz', 1001),
+    ];
+
+    const savedDetail: ClassDetail = {
+      ...synthDetail,
+      allSubjects: savedSubjects,
+      config: buildClassConfig(synthDetail.schoolClass, savedSubjects),
+    };
+
+    const d = buildDraft(extraction([student({ cells: full([50, 60, 70, 30, 10]) })]), synthDetail);
+    const mappedRows = remapRowsToSavedDetail(d.rows, synthDetail, savedDetail);
+
+    expect(Object.keys(mappedRows[0].marks)).toContain(uuid1);
+    expect(Object.keys(mappedRows[0].marks)).toContain(uuid2);
+    expect(Object.keys(mappedRows[0].marks)).not.toContain('subj-col-0');
+    expect(Object.keys(mappedRows[0].marks)).not.toContain('subj-col-1');
+  });
+});
+
+describe('editable subject names & safe student input', () => {
+  it('updates subject name in draft and detail using updateSubjectName', () => {
+    const detail = makeDetail();
+    const d = buildDraft(extraction([student({ cells: full([50, 60, 70, 30, 10]) })]), detail);
+    const fiqhSubjectId = detail.allSubjects.find((s) => s.name === 'Fiqh')!.id;
+
+    const { draft: nextDraft, detail: nextDetail } = updateSubjectName(d, detail, fiqhSubjectId, 'Fiqh - Advanced');
+
+    const updatedSubj = nextDetail.allSubjects.find((s) => s.id === fiqhSubjectId);
+    expect(updatedSubj?.name).toBe('Fiqh - Advanced');
+    const matched = nextDraft.mapping.matches.find((m) => m.subjectId === fiqhSubjectId);
+    expect(matched?.header).toBe('Fiqh - Advanced');
+  });
+
+  it('safely builds StudentInput without undefined or NaN marks', () => {
+    const detail = makeDetail();
+    const d = buildDraft(extraction([student({ cells: full([50, 60, 70, 30, 10]) })]), detail);
+    const v = validate(d.rows[0], d.rows, detail);
+    expect(v.ok).toBe(true);
+
+    const input = toStudentInput(d.rows[0], detail, v);
+    expect(input.marks.every((m) => typeof m.marks === 'number' && Number.isFinite(m.marks))).toBe(true);
+    expect(input.marks.some((m) => m.marks === undefined || m.marks === null)).toBe(false);
   });
 });

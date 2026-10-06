@@ -19,7 +19,8 @@ import {
 } from '../../src/lib/import/types.js';
 import { parseModelJson, validateExtraction } from '../../src/lib/import/validateExtraction.js';
 
-export const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash';
+export const DEFAULT_GEMINI_MODEL = 'gemini-3.5-flash';
+export const FALLBACK_MODELS = ['gemini-3.5-flash', 'gemini-3.6-flash', 'gemini-3.8-flash', 'gemini-3.1-flash-lite'];
 
 export interface HandlerEnv {
   GEMINI_API_KEY?: string;
@@ -61,16 +62,17 @@ export function buildPrompt(ctx?: ClassContext): string {
       )
     : null;
 
-  return `You are performing advanced document analysis and mark list extraction on a school or madrasa examination mark list photograph.
+  return `You are performing advanced document analysis and mark list extraction on a school or madrasa examination mark list photograph FOR AN EXISTING MARK LIST APPLICATION.
 
 Perform multi-stage visual document analysis:
 STAGE 1: DOCUMENT BOUNDARIES & LAYOUT ANALYSIS
-- Identify the document header, institution metadata, exam title, class name, division, and exam date.
+- Identify the document header, institution metadata, exam title, class name, and exam year.
 - Identify the subject table header region, column boundaries, student rows, and section headers (Boys / Girls).
 
 STAGE 2: DOCUMENT METADATA EXTRACTION
-- Extract institution name, location, range, exam name, exam year (4-digit number), class name, division (e.g. A, B, Division 1), and exam date if visible.
+- Extract ONLY institution name, location, range, exam name, exam year (4-digit number), and class name.
 - Assign honest confidence ("high", "medium", "low") for each metadata field.
+- Ignore document dates, division labels, and generic document metadata that are not supported.
 
 STAGE 3: SUBJECT COLUMNS EXTRACTION
 - Extract every subject column header exactly as written (in English, Malayalam, or mixed text).
@@ -79,7 +81,7 @@ STAGE 3: SUBJECT COLUMNS EXTRACTION
 
 STAGE 4: STUDENT ROWS & MARKS EXTRACTION
 - Identify sections: BOYS / GIRLS (or Malayalam equivalents: ആൺകുട്ടികൾ / പെൺകുട്ടികൾ). Set category to "boys" or "girls". If no clear section heading or uncertain, use null.
-- Extract student roll number (rollNumber), admission/registration number (admissionNumber) if printed/written, and student name (name).
+- Extract student roll number (rollNumber) and student name (name).
 - Preserve Malayalam names and text EXACTLY as written. Do NOT translate or transliterate names.
 - Extract marks into "cells" array matched to the column indices:
   - status "value": visible numeric mark (0-100). Do NOT round or guess.
@@ -93,7 +95,7 @@ STAGE 5: RECONCILIATION & WARNINGS
 - Add document warnings for any cut-off text, blurry regions, ambiguous alignment, or unreadable entries.
 
 CRITICAL RULES:
-1. NEVER INVENT DATA. Do not guess names, marks, admission numbers, class, or year.
+1. NEVER INVENT DATA. Do not guess names, marks, class, or year.
 2. Return null for unreadable or missing values.
 3. Blank cells MUST stay status "blank" (never convert to 0).
 4. Do not calculate totals or final pass/fail results. The system performs all business rules.
@@ -125,8 +127,6 @@ export const RESPONSE_SCHEMA = {
         examName: nullableString,
         examYear: nullableInt,
         className: nullableString,
-        division: nullableString,
-        examDate: nullableString,
         confidence: {
           type: Type.OBJECT,
           properties: {
@@ -136,13 +136,11 @@ export const RESPONSE_SCHEMA = {
             examName: confidenceSchema,
             examYear: confidenceSchema,
             className: confidenceSchema,
-            division: confidenceSchema,
-            examDate: confidenceSchema,
           },
-          required: ['institutionName', 'location', 'range', 'examName', 'examYear', 'className', 'division', 'examDate'],
+          required: ['institutionName', 'location', 'range', 'examName', 'examYear', 'className'],
         },
       },
-      required: ['institutionName', 'location', 'range', 'examName', 'examYear', 'className', 'division', 'examDate', 'confidence'],
+      required: ['institutionName', 'location', 'range', 'examName', 'examYear', 'className', 'confidence'],
     },
     columns: {
       type: Type.ARRAY,
@@ -167,8 +165,6 @@ export const RESPONSE_SCHEMA = {
           categoryConfidence: confidenceSchema,
           rollNumber: nullableInt,
           rollConfidence: confidenceSchema,
-          admissionNumber: nullableString,
-          admissionConfidence: confidenceSchema,
           name: nullableString,
           nameConfidence: confidenceSchema,
           box: boxSchema,
@@ -192,8 +188,6 @@ export const RESPONSE_SCHEMA = {
           'categoryConfidence',
           'rollNumber',
           'rollConfidence',
-          'admissionNumber',
-          'admissionConfidence',
           'name',
           'nameConfidence',
           'cells',
@@ -289,9 +283,14 @@ export async function handleAnalyzeRequest(
 ): Promise<HandlerResult> {
   try {
     const apiKey = env.GEMINI_API_KEY?.trim();
+    console.log(`[importMarklist] API key configured: ${Boolean(apiKey)}`);
     if (!apiKey) throw new ImportError('missingApiKey');
+
     const primaryModel = env.GEMINI_MODEL?.trim() || DEFAULT_GEMINI_MODEL;
-    const fallbackModel = env.GEMINI_FALLBACK_MODEL?.trim();
+    const configuredFallback = env.GEMINI_FALLBACK_MODEL?.trim();
+    const candidateModels = Array.from(
+      new Set([primaryModel, ...(configuredFallback ? [configuredFallback] : []), ...FALLBACK_MODELS]),
+    );
 
     if (!isObj(body)) throw new ImportError('badRequest');
     const mimeType = typeof body.mimeType === 'string' ? body.mimeType : '';
@@ -304,27 +303,42 @@ export async function handleAnalyzeRequest(
       throw new ImportError('invalidImage');
     }
 
+    console.log(`[importMarklist] Image MIME: ${mimeType}, base64 length: ${imageBase64.length}`);
+
     const classContext = sanitizeContext(body.classContext);
     const prompt = buildPrompt(classContext);
 
     let text: string | undefined;
-    try {
-      text = await generate({ apiKey, model: primaryModel, imageBase64, mimeType, prompt });
-    } catch (err) {
-      if (fallbackModel && fallbackModel !== primaryModel) {
-        try {
-          text = await generate({ apiKey, model: fallbackModel, imageBase64, mimeType, prompt });
-        } catch (fallbackErr) {
-          throw mapProviderError(fallbackErr);
+    let lastError: unknown;
+
+    for (const modelToTry of candidateModels) {
+      try {
+        console.log(`[importMarklist] Attempting Gemini request with model: ${modelToTry}...`);
+        text = await generate({ apiKey, model: modelToTry, imageBase64, mimeType, prompt });
+        if (text) {
+          console.log(`[importMarklist] Gemini request succeeded with ${modelToTry}! Response text length: ${text.length}`);
+          break;
         }
-      } else {
-        throw mapProviderError(err);
+      } catch (err: any) {
+        console.warn(`[importMarklist] Model ${modelToTry} failed:`, err?.message || err);
+        lastError = err;
       }
     }
 
-    const result = validateExtraction(parseModelJson(text));
+    if (!text) {
+      console.error('[importMarklist] All candidate models failed!');
+      throw mapProviderError(lastError);
+    }
+
+    const parsedJson = parseModelJson(text);
+    const result = validateExtraction(parsedJson);
+    console.log(
+      `[importMarklist] Extraction validation successful! Students: ${result.students.length}, Columns: ${result.columns.length}`,
+    );
+
     return { status: 200, body: { ok: true, result } };
-  } catch (err) {
+  } catch (err: any) {
+    console.error('[importMarklist] Request failed with code:', err instanceof ImportError ? err.code : 'generic', err?.message);
     const e = err instanceof ImportError ? err : new ImportError('generic');
     return { status: statusFor(e.code), body: { ok: false, code: e.code } };
   }

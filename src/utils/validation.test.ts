@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseMark, parseRollNumber, suggestNextRollNumber } from './validation';
+import { isValidUuid, parseMark, parseRollNumber, suggestNextRollNumber } from './validation';
 
 describe('parseMark', () => {
   it('accepts valid marks', () => {
@@ -30,5 +30,15 @@ describe('roll numbers', () => {
     expect(suggestNextRollNumber([])).toBe(1);
     expect(suggestNextRollNumber([1, 2, 3])).toBe(4);
     expect(suggestNextRollNumber([1, 5, 3])).toBe(6);
+  });
+});
+
+describe('isValidUuid', () => {
+  it('validates UUIDs correctly and rejects temporary frontend IDs', () => {
+    expect(isValidUuid('123e4567-e89b-12d3-a456-426614174000')).toBe(true);
+    expect(isValidUuid('subj-col-0')).toBe(false);
+    expect(isValidUuid('synth-quran-id')).toBe(false);
+    expect(isValidUuid('')).toBe(false);
+    expect(isValidUuid(null)).toBe(false);
   });
 });

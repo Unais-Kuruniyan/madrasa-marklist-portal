@@ -36,11 +36,9 @@ export interface ExtractedCell {
 export interface ExtractedStudent {
   category: ExtractedCategory | null;
   rollNumber: number | null;
-  admissionNumber: string | null;
   name: string | null;
   categoryConfidence: Confidence;
   rollConfidence: Confidence;
-  admissionConfidence: Confidence;
   nameConfidence: Confidence;
   box?: BoundingBox | null;
   cells: ExtractedCell[];
@@ -53,8 +51,6 @@ export interface DocumentMetadata {
   examName: string | null;
   examYear: number | null;
   className: string | null;
-  division: string | null;
-  examDate: string | null;
   confidence: {
     institutionName: Confidence;
     location: Confidence;
@@ -62,8 +58,6 @@ export interface DocumentMetadata {
     examName: Confidence;
     examYear: Confidence;
     className: Confidence;
-    division: Confidence;
-    examDate: Confidence;
   };
 }
 

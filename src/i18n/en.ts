@@ -337,6 +337,8 @@ export const en = {
     subjectActionMap: 'Map to existing',
     unmappedSubjectWarning: 'Please assign or ignore all detected subjects.',
     missingRequiredMetadata: 'Class Name and Exam Name are required to create a new class.',
+    selectExamPlaceholder: 'Select Exam',
+    unconfidentExamHint: 'Could not confidently identify exam from photo. Please select an option.',
     tryAgain: 'Try Again',
     confirmAndSave: 'Confirm & Save',
     savingImport: 'Saving...',

@@ -238,7 +238,17 @@ export async function deleteClass(classId: string): Promise<void> {
   if (error) throw error;
 }
 
+import { isValidUuid } from '../../utils/validation';
+
 export async function saveStudent(input: StudentInput): Promise<string> {
+  for (const m of input.marks) {
+    if (!isValidUuid(m.subjectId)) {
+      throw new Error(
+        `Cannot save student mark: Subject ID '${m.subjectId}' is not a valid database UUID. Importer subject IDs must be resolved to database UUIDs before saving.`,
+      );
+    }
+  }
+
   const { data, error } = await getSupabase().rpc('save_student', {
     p_exam_id: input.examId,
     p_student_id: input.studentId,

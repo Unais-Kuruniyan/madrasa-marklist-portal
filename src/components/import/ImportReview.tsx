@@ -6,9 +6,13 @@ import {
   evaluateRow,
   findTotalMismatches,
   importableSubjects,
+  isStudentSaveable,
   missingStudentEstimate,
   newBlankRow,
+  numericMarks,
   remapColumn,
+  remapRowsToSavedDetail,
+  updateSubjectName,
   validateRow,
   type DraftRow,
   type DuplicateChoice,
@@ -17,7 +21,7 @@ import {
 } from '../../lib/import/draft';
 import type { PreparedImage } from '../../lib/import/image';
 import type { BoundingBox, Confidence } from '../../lib/import/types';
-import { saveClass, saveStudent } from '../../lib/supabase/api';
+import { deleteClass, getClassDetail, saveClass, saveStudent } from '../../lib/supabase/api';
 import { handleError } from '../../lib/supabase/errors';
 import { cx, formatMark } from '../../utils/format';
 import { Alert } from '../ui/Alert';
@@ -120,9 +124,14 @@ export function ImportReview({
     }
 
     setSaving(true);
+    let createdClassId: string | undefined = undefined;
+
     try {
       let activeClassDetail = detail;
-      let createdClassId: string | undefined = undefined;
+      let targetRows = draft.rows;
+      let targetValidations = validations;
+
+      console.log(`[ImportSave] Starting save process. Total students to save: ${draft.rows.length}`);
 
       // Mode A: Create New Class & Save
       if (isHomeMode && saveOption === 'create') {
@@ -136,9 +145,7 @@ export function ImportReview({
           institutionName: draft.header.institutionName,
           institutionLocation: draft.header.institutionLocation,
           rangeName: draft.header.rangeName,
-          className: draft.header.division
-            ? `${draft.header.className.trim()} ${draft.header.division.trim()}`.trim()
-            : draft.header.className.trim(),
+          className: draft.header.className.trim(),
           examName: draft.header.examName.trim(),
           examYear: Number(draft.header.examYear) || new Date().getFullYear(),
           totalStudents: draft.rows.length,
@@ -146,51 +153,104 @@ export function ImportReview({
           subjects: subjects.map((s) => ({ id: null, name: s.name })),
         };
 
+        console.log('[ImportSave] STEP 1: Creating class & subjects in database with input:', classInput);
         const result = await saveClass(null, classInput);
         createdClassId = result.classId;
+        console.log(`[ImportSave]   -> Class created: classId = "${result.classId}", examId = "${result.examId}"`);
 
-        // Construct target detail for student saving
-        activeClassDetail = {
-          ...detail,
-          examination: {
-            ...detail.examination,
-            id: result.examId,
-            classId: result.classId,
-          },
-        };
+        // STEP 2: Fetch created class detail from database (contains real database subject UUIDs)
+        console.log('[ImportSave] STEP 2: Fetching created class detail from database...');
+        const realDetail = await getClassDetail(result.classId, result.examId);
+        if (!realDetail) {
+          throw new Error('Could not fetch newly created class detail from database.');
+        }
+        console.log(`[ImportSave]   -> Fetched class detail successfully. Real subjects count: ${realDetail.allSubjects.length}`);
+
+        // STEP 3: Map draft rows (which used subj-col-0, etc.) to realDetail (which uses real UUIDs)
+        console.log('[ImportSave] STEP 3: Mapping temporary subject IDs to real database UUIDs...');
+        targetRows = remapRowsToSavedDetail(draft.rows, detail, realDetail);
+        activeClassDetail = realDetail;
+
+        // STEP 4: Re-validate mapped rows against realDetail
+        const realValidations = new Map<string, RowValidation>();
+        for (const r of targetRows) {
+          realValidations.set(r.key, validateRow(r, targetRows, realDetail, t));
+        }
+        targetValidations = realValidations;
       } else if (isHomeMode && saveOption === 'existing' && onSelectExistingClass) {
         if (!selectedTargetClassId) {
           setSaveMessage({ tone: 'error', text: t('photoImport.chooseTargetClassPlaceholder') });
           setSaving(false);
           return;
         }
+        console.log(`[ImportSave] Importing into existing class: ${selectedTargetClassId}`);
         await onSelectExistingClass(selectedTargetClassId);
+      }
+
+      console.log(`[ImportSave] Student Validation Diagnostics (${targetRows.length} total rows):`);
+      for (const r of targetRows) {
+        const v = targetValidations.get(r.key);
+        const saveable = isStudentSaveable(r, activeClassDetail, v);
+        const parsedCount = Object.keys(numericMarks(r, activeClassDetail)).length;
+        console.log(`[ImportSave]   Student Roll ${r.roll || '?'} (${r.category || 'none'}) — "${r.name}": SAVEABLE=${saveable}, valid=${v?.ok}, markCount=${parsedCount}, errors=`, v?.errors);
+      }
+
+      const batch = buildPhotoSaveBatch(targetRows, activeClassDetail, targetValidations);
+      console.log(`[ImportSave] STEP 4: Saving ${batch.length} student records...`);
+
+      if (batch.length === 0) {
+        throw new Error('No valid student records found to save.');
       }
 
       const savedKeys: string[] = [];
       const failures: Record<string, string> = {};
 
-      for (const item of buildPhotoSaveBatch(draft.rows, activeClassDetail, validations)) {
+      for (let i = 0; i < batch.length; i++) {
+        const item = batch[i];
+        const studentDesc = `Roll ${item.input.rollNumber} (${item.input.category === 'boys' ? 'Boys' : 'Girls'}) — ${item.input.studentName}`;
         try {
-          await saveStudent(item.input);
+          console.log(`[ImportSave]   Saving student ${i + 1}/${batch.length}: ${studentDesc} (examId: ${item.input.examId}, marks count: ${item.input.marks.length})...`);
+          const savedStudentId = await saveStudent(item.input);
+          console.log(`[ImportSave]     -> Student saved successfully! studentId = "${savedStudentId}"`);
           savedKeys.push(item.key);
-        } catch (err) {
-          failures[item.key] = handleError(err, t('student.saveError'));
+        } catch (err: any) {
+          const rawErr = err?.message || String(err);
+          console.error(`[ImportSave]     -> FAILED to save student ${studentDesc}:`, rawErr);
+          failures[item.key] = `${studentDesc}: ${rawErr}`;
         }
       }
 
-      setSaving(false);
       const failedCount = Object.keys(failures).length;
 
-      if (failedCount === 0) {
-        onImported(savedKeys.length, createdClassId);
+      if (failedCount > 0) {
+        console.error(`[ImportSave] Save process incomplete: ${savedKeys.length} saved, ${failedCount} failed.`);
+        if (createdClassId) {
+          console.warn(`[ImportSave] Rolling back newly created class ${createdClassId} to prevent orphaned incomplete class...`);
+          await deleteClass(createdClassId);
+          console.warn('[ImportSave] Class rollback completed successfully.');
+          createdClassId = undefined;
+        }
+        const firstErr = Object.values(failures)[0];
+        setSaving(false);
+        setRowErrors(failures);
+        setSaveMessage({ tone: 'error', text: `Import failed: ${firstErr}. The newly created class was rolled back.` });
         return;
       }
 
-      onChange((d) => ({ ...d, rows: d.rows.filter((r) => !savedKeys.includes(r.key)) }));
-      setRowErrors(failures);
-      setSaveMessage({ tone: 'warning', text: t('photoImport.importedPartial', { saved: savedKeys.length, failed: failedCount }) });
-    } catch (err) {
+      console.log(`[ImportSave] ALL ${savedKeys.length} STUDENTS SAVED SUCCESSFULLY! Finishing import.`);
+      setSaving(false);
+      onImported(savedKeys.length, createdClassId);
+    } catch (err: any) {
+      console.error('[ImportSave] Critical exception during import save:', err);
+      if (createdClassId) {
+        try {
+          console.warn(`[ImportSave] Rolling back newly created class ${createdClassId}...`);
+          await deleteClass(createdClassId);
+          console.warn('[ImportSave] Class rollback completed successfully.');
+        } catch (rollbackErr) {
+          console.error('[ImportSave] Failed to rollback class:', rollbackErr);
+        }
+      }
       setSaving(false);
       setSaveMessage({ tone: 'error', text: handleError(err, t('errors.generic')) });
     }
@@ -266,7 +326,6 @@ export function ImportReview({
       row.review.category ||
       row.review.roll ||
       row.review.name ||
-      row.review.admission ||
       (!row.absent && Object.values(row.review.marks).some(Boolean)) ||
       v.duplicate !== null;
 
@@ -287,7 +346,7 @@ export function ImportReview({
     }
     if (rowErrors[row.key]) messages.push({ tone: 'error', text: rowErrors[row.key] });
 
-    const extraCols = subjects.length + (withQH ? 1 : 0) + 7;
+    const extraCols = subjects.length + (withQH ? 1 : 0) + 6;
     const hasNotes = v.duplicate !== null || messages.length > 0;
     const categoryLabel = (c: StudentCategory) => (c === 'boys' ? t('student.boys') : t('student.girls'));
 
@@ -315,19 +374,6 @@ export function ImportReview({
               value={row.roll}
               onChange={(e) =>
                 updateRow(row.key, (r) => ({ ...r, roll: e.target.value, rollAssigned: false, review: { ...r.review, roll: false } }))
-              }
-            />
-          </td>
-          <td className="px-1.5 py-2">
-            <input
-              aria-label={t('photoImport.admissionNumber')}
-              autoComplete="off"
-              maxLength={30}
-              className={cx(cellClass(undefined, row.admissionNumber, row.review.admission), 'w-20 text-center')}
-              placeholder="Adm No"
-              value={row.admissionNumber}
-              onChange={(e) =>
-                updateRow(row.key, (r) => ({ ...r, admissionNumber: e.target.value, review: { ...r.review, admission: false } }))
               }
             />
           </td>
@@ -484,7 +530,6 @@ export function ImportReview({
               <tr>
                 <th scope="col" className="w-8 px-2 py-2" />
                 <th scope="col" className="px-2 py-2 text-center">{t('student.rollNumber')}</th>
-                <th scope="col" className="px-2 py-2 text-center">{t('photoImport.admissionNumber')}</th>
                 <th scope="col" className="px-2 py-2">{t('student.name')}</th>
                 <th scope="col" className="px-2 py-2">{t('student.categoryLabel')}</th>
                 <th scope="col" className="px-2 py-2 text-center" title={t('photoImport.colAbsentTitle')}>{t('photoImport.colAbsent')}</th>
@@ -576,24 +621,107 @@ export function ImportReview({
         </aside>
 
         <div className="min-w-0 space-y-5">
-          {/* Metadata Review Card (Section 13) */}
+          {/* Metadata Review Card (Application Fields Only) */}
           <div className="card p-4 space-y-3">
             <h3 className="text-sm font-bold text-slate-900 border-b border-slate-100 pb-2">
-              1. Document Metadata Review
+              1. Class Information
             </h3>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
               {headerField('import-institution', t('photoImport.headerInstitution'), 'institutionName', 'institutionName')}
               {headerField('import-location', t('photoImport.headerLocation'), 'institutionLocation', 'location')}
               {headerField('import-range', t('photoImport.headerRange'), 'rangeName', 'range')}
               {headerField('import-class', t('photoImport.headerClass'), 'className', 'className')}
-              {headerField('import-division', t('photoImport.headerDivision'), 'division', 'division')}
-              {headerField('import-exam', t('photoImport.headerExam'), 'examName', 'examName')}
+
+              <div key="import-exam">
+                <div className="mb-1 flex items-center justify-between">
+                  <label htmlFor="import-exam-select" className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    {t('photoImport.headerExam')}
+                  </label>
+                  <ConfidenceBadge confidence={draft.header.confidence.examName} />
+                </div>
+                <select
+                  id="import-exam-select"
+                  className="field-input !py-2 !text-sm"
+                  value={
+                    [
+                      'Half-Yearly Examination',
+                      'Annual Examination',
+                      'Quarterly Examination',
+                      'Monthly Examination',
+                      'Model Examination',
+                    ].includes(draft.header.examName)
+                      ? draft.header.examName
+                      : draft.header.examName
+                        ? 'Custom'
+                        : ''
+                  }
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === 'Custom') {
+                      setHeader({ examName: draft.header.examName || '' });
+                    } else {
+                      setHeader({ examName: val });
+                    }
+                  }}
+                >
+                  <option value="">-- {t('photoImport.selectExamPlaceholder')} --</option>
+                  <option value="Half-Yearly Examination">{t('exam.halfYearly')}</option>
+                  <option value="Annual Examination">{t('exam.annual')}</option>
+                  <option value="Quarterly Examination">{t('exam.quarterly')}</option>
+                  <option value="Monthly Examination">{t('exam.monthly')}</option>
+                  <option value="Model Examination">{t('exam.model')}</option>
+                  <option value="Custom">{t('exam.custom')}</option>
+                </select>
+                {(![
+                  'Half-Yearly Examination',
+                  'Annual Examination',
+                  'Quarterly Examination',
+                  'Monthly Examination',
+                  'Model Examination',
+                ].includes(draft.header.examName) &&
+                  draft.header.examName !== '') ||
+                draft.header.examName === 'Custom' ? (
+                  <input
+                    type="text"
+                    className="field-input mt-1.5 !py-1.5 !text-sm"
+                    placeholder={t('class.customExamPlaceholder')}
+                    value={draft.header.examName}
+                    onChange={(e) => setHeader({ examName: e.target.value })}
+                  />
+                ) : null}
+                {!draft.header.examName && (
+                  <p className="mt-1 text-[11px] text-amber-700">{t('photoImport.unconfidentExamHint')}</p>
+                )}
+              </div>
+
               {headerField('import-year', t('photoImport.headerYear'), 'examYear', 'examYear', 'numeric')}
-              {headerField('import-date', t('photoImport.headerDate'), 'examDate', 'examDate')}
             </div>
           </div>
 
-          {/* Home Mode Save Options & Confirmation Summary */}
+          {/* Pre-Save Validation Summary Block */}
+          <div className={cx('card p-4 border-2 transition', invalidCount === 0 ? 'border-emerald-200 bg-emerald-50/20' : 'border-amber-300 bg-amber-50/20')}>
+            <h3 className="text-sm font-bold text-slate-900 mb-2 flex items-center justify-between">
+              <span>Import Validation Summary</span>
+              {invalidCount === 0 ? (
+                <span className="text-xs font-semibold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full flex items-center gap-1">
+                  <CheckIcon className="size-3.5" /> Ready to save
+                </span>
+              ) : (
+                <span className="text-xs font-semibold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full flex items-center gap-1">
+                  <WarnIcon className="size-3.5" /> {invalidCount} row(s) need attention
+                </span>
+              )}
+            </h3>
+
+            <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4 text-slate-700">
+              <div><span className="font-semibold">Students:</span> {draft.rows.length} ({boysCount} Boys, {girlsCount} Girls)</div>
+              <div><span className="font-semibold">Mapped Subjects:</span> {subjects.length}</div>
+              <div><span className="font-semibold">Class Name:</span> {draft.header.className || '⚠ Missing'}</div>
+              <div><span className="font-semibold">Exam & Year:</span> {draft.header.examName ? `${draft.header.examName} (${draft.header.examYear})` : '⚠ Missing'}</div>
+            </div>
+          </div>
+
+          {/* Home Mode Save Options */}
           {isHomeMode && (
             <div className="card p-4 space-y-4 border-2 border-brand-200 bg-brand-50/20">
               <h3 className="text-sm font-bold text-slate-900">2. Select Import Action</h3>
@@ -650,21 +778,6 @@ export function ImportReview({
                   </select>
                 </div>
               )}
-
-              {saveOption === 'create' && (
-                <div className="rounded-lg border border-brand-200 bg-white p-3 space-y-2">
-                  <p className="text-xs font-bold uppercase tracking-wider text-brand-900">{t('photoImport.summaryTitle')}</p>
-                  <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4 text-slate-700">
-                    <div><span className="font-semibold">{t('photoImport.summaryClass')}:</span> {draft.header.className || '—'}</div>
-                    <div><span className="font-semibold">{t('photoImport.summaryDivision')}:</span> {draft.header.division || '—'}</div>
-                    <div><span className="font-semibold">{t('photoImport.summaryExam')}:</span> {draft.header.examName} ({draft.header.examYear})</div>
-                    <div><span className="font-semibold">{t('photoImport.summarySubjects')}:</span> {subjects.length}</div>
-                    <div><span className="font-semibold">{t('photoImport.summaryBoys')}:</span> {boysCount}</div>
-                    <div><span className="font-semibold">{t('photoImport.summaryGirls')}:</span> {girlsCount}</div>
-                    <div><span className="font-semibold">{t('photoImport.summaryTotal')}:</span> {draft.rows.length}</div>
-                  </div>
-                </div>
-              )}
             </div>
           )}
 
@@ -684,45 +797,93 @@ export function ImportReview({
             </Alert>
           )}
 
-          {/* Detected Subject Column Mapping (Section 9 & 14) */}
-          <div className="card p-4" id="import-column-mapping">
-            <h3 className="mb-2 text-sm font-semibold text-slate-800">{t('photoImport.detectedSubjectsTitle')}</h3>
-            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-              {draft.mapping.matches.map((m) => (
-                <div
-                  key={m.columnIndex}
-                  className={cx(
-                    'rounded-lg border p-2',
-                    m.subjectId && !m.needsReview ? 'border-slate-200 bg-slate-50' : 'border-amber-300 bg-amber-50',
-                  )}
-                >
-                  <p className="mb-1 flex items-center justify-between text-xs font-semibold text-slate-700">
-                    <span className="flex items-center gap-1 truncate" title={m.header}>
-                      {m.subjectId && !m.needsReview ? (
-                        <CheckIcon className="size-3.5 text-pass-700 shrink-0" />
-                      ) : (
-                        <WarnIcon className="size-3.5 text-amber-700 shrink-0" />
-                      )}
-                      <span>{m.header}</span>
-                    </span>
+          {/* Detected Subject Column Mapping & Editable Subject Names (Section 9, 10, 11 & 13) */}
+          {(() => {
+            const subjectMatches = draft.mapping.matches.filter((m) => {
+              const col = draft.columns.find((c) => c.index === m.columnIndex);
+              return col && (col.kind === 'subject' || col.kind === 'quran' || col.kind === 'hifz');
+            });
+            if (subjectMatches.length === 0) return null;
+            return (
+              <div className="card p-4 space-y-3" id="import-column-mapping">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">{t('photoImport.detectedSubjectsTitle')}</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {isHomeMode && saveOption === 'create'
+                      ? 'Detected subject columns from photo. Edit final subject names before saving.'
+                      : 'Map detected photo columns to existing class subjects.'}
                   </p>
-                  <select
-                    aria-label={m.header}
-                    className="field-input !py-1.5 !text-sm"
-                    value={m.subjectId ?? ''}
-                    onChange={(e) => onChange((d) => remapColumn(d, detail, m.columnIndex, e.target.value || null))}
-                  >
-                    <option value="">{t('photoImport.columnIgnore')}</option>
-                    {subjects.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name}
-                      </option>
-                    ))}
-                  </select>
                 </div>
-              ))}
-            </div>
-          </div>
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  {subjectMatches.map((m) => {
+                    const matchedSubject = subjects.find((s) => s.id === m.subjectId);
+                    const isCreatingNew = isHomeMode && saveOption === 'create';
+                    return (
+                      <div
+                        key={m.columnIndex}
+                        className={cx(
+                          'rounded-lg border p-3 space-y-2',
+                          m.subjectId && !m.needsReview ? 'border-slate-200 bg-slate-50' : 'border-amber-300 bg-amber-50',
+                        )}
+                      >
+                        <div className="flex items-center justify-between text-xs font-semibold text-slate-700">
+                          <span className="flex items-center gap-1 truncate" title={m.header}>
+                            {m.subjectId && !m.needsReview ? (
+                              <CheckIcon className="size-3.5 text-pass-700 shrink-0" />
+                            ) : (
+                              <WarnIcon className="size-3.5 text-amber-700 shrink-0" />
+                            )}
+                            <span>Detected: "{m.header}"</span>
+                          </span>
+                        </div>
+
+                        {/* Mode A: Create New Class — Editable Subject Name Input (Section 11A) */}
+                        {isCreatingNew && m.subjectId && matchedSubject && (
+                          <div>
+                            <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1">
+                              Final Subject Name
+                            </label>
+                            <input
+                              type="text"
+                              aria-label={`Subject name for ${m.header}`}
+                              className="field-input !py-1.5 !px-2.5 !text-xs font-medium"
+                              value={matchedSubject.name}
+                              onChange={(e) => {
+                                const newName = e.target.value;
+                                onChange((d) => updateSubjectName(d, detail, m.subjectId!, newName).draft);
+                              }}
+                            />
+                          </div>
+                        )}
+
+                        {/* Mode B: Import into Existing Class — Mapping Dropdown (Section 11B) */}
+                        {!isCreatingNew && (
+                          <div>
+                            <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1">
+                              Map to Existing Subject
+                            </label>
+                            <select
+                              aria-label={m.header}
+                              className="field-input !py-1.5 !text-xs"
+                              value={m.subjectId ?? ''}
+                              onChange={(e) => onChange((d) => remapColumn(d, detail, m.columnIndex, e.target.value || null))}
+                            >
+                              <option value="">{t('photoImport.columnIgnore')}</option>
+                              {subjects.map((s) => (
+                                <option key={s.id} value={s.id}>
+                                  {s.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
 
           <p className="flex items-start gap-2 text-xs text-slate-600">
             <WarnIcon className="mt-px size-4 shrink-0 text-amber-600" />

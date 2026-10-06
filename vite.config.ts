@@ -31,14 +31,32 @@ function devImportMarklistApi(): Plugin {
             return send(400, { ok: false, code: 'badRequest' });
           }
           const env = loadEnv('development', process.cwd(), '');
+          const apiKey = env.GEMINI_API_KEY || process.env.GEMINI_API_KEY;
+          const model = env.GEMINI_MODEL || process.env.GEMINI_MODEL;
+          const fallbackModel = env.GEMINI_FALLBACK_MODEL || process.env.GEMINI_FALLBACK_MODEL;
+
+          console.log('[devImportMarklistApi] Incoming POST /api/import-marklist');
+          console.log(`[devImportMarklistApi] GEMINI_API_KEY configured: ${Boolean(apiKey)}`);
+          if (model) console.log(`[devImportMarklistApi] GEMINI_MODEL: ${model}`);
+
           const mod = await server.ssrLoadModule('/api/_lib/importMarklist.ts');
           const out = await mod.handleAnalyzeRequest(parsed, {
-            GEMINI_API_KEY: env.GEMINI_API_KEY,
-            GEMINI_MODEL: env.GEMINI_MODEL,
+            GEMINI_API_KEY: apiKey,
+            GEMINI_MODEL: model,
+            GEMINI_FALLBACK_MODEL: fallbackModel,
           });
           return send(out.status, out.body);
-        } catch {
-          return send(500, { ok: false, code: 'generic' });
+        } catch (err: any) {
+          console.error('[devImportMarklistApi] Server Exception:', err?.name, err?.message);
+          if (err?.stack) console.error(err.stack);
+          return send(500, {
+            ok: false,
+            code: 'generic',
+            error: {
+              name: err?.name || 'Error',
+              message: err?.message || 'Server processing error',
+            },
+          });
         }
       });
     },

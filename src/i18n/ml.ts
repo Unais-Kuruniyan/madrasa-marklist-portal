@@ -339,6 +339,8 @@ export const ml: Translations = {
     subjectActionMap: 'നിലവിലുള്ള വിഷയത്തിലേക്ക് ചേർക്കുക',
     unmappedSubjectWarning: 'ദയവായി എല്ലാ വിഷയങ്ങളും ക്രമീകരിക്കുക അല്ലെങ്കിൽ ഒഴിവാക്കുക.',
     missingRequiredMetadata: 'പുതിയ ക്ലാസ് ഉണ്ടാക്കാൻ ക്ലാസിന്റെ പേരും പരീക്ഷാ പേരും നിർബന്ധമാണ്.',
+    selectExamPlaceholder: 'പരീക്ഷ തിരഞ്ഞെടുക്കുക',
+    unconfidentExamHint: 'ഫോട്ടോയിൽ നിന്ന് പരീക്ഷ ഏതാണെന്ന് ഉറപ്പിക്കാൻ കഴിഞ്ഞില്ല. ഒരു ഓപ്ഷൻ തിരഞ്ഞെടുക്കുക.',
     tryAgain: 'വീണ്ടും ശ്രമിക്കുക',
     confirmAndSave: 'സ്ഥിരീകരിച്ച് സേവ് ചെയ്യുക',
     savingImport: 'സേവ് ചെയ്യുന്നു...',

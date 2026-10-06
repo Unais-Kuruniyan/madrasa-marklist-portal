@@ -167,13 +167,11 @@ export function ImportMarkListModal({ mode = 'home', detail, onClose, onImported
             institutionLocation: extraction.documentMetadata.location ?? '',
             rangeName: extraction.documentMetadata.range ?? '',
             className: extraction.documentMetadata.className ?? '',
-            division: extraction.documentMetadata.division ?? '',
             examName: extraction.documentMetadata.examName ?? '',
             examYear:
               extraction.documentMetadata.examYear !== null
                 ? String(extraction.documentMetadata.examYear)
                 : String(new Date().getFullYear()),
-            examDate: extraction.documentMetadata.examDate ?? '',
             confidence: extraction.documentMetadata.confidence,
           },
           extraction.columns
@@ -212,8 +210,6 @@ export function ImportMarkListModal({ mode = 'home', detail, onClose, onImported
           examName: prev.header.examName,
           examYear: Number(prev.header.examYear) || null,
           className: prev.header.className,
-          division: prev.header.division,
-          examDate: prev.header.examDate,
           confidence: prev.header.confidence as any,
         },
         columns: prev.columns,
@@ -222,8 +218,6 @@ export function ImportMarkListModal({ mode = 'home', detail, onClose, onImported
           categoryConfidence: 'high',
           rollNumber: Number(r.roll) || null,
           rollConfidence: 'high',
-          admissionNumber: r.admissionNumber || null,
-          admissionConfidence: 'high',
           name: r.name || null,
           nameConfidence: 'high',
           box: r.box,
