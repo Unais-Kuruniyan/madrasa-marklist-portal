@@ -7,8 +7,9 @@ import { getClassDetail } from '../lib/supabase/api';
 import { cx, formatMark, formatPercent } from '../utils/format';
 import { Alert } from '../components/ui/Alert';
 import { Button, LinkButton } from '../components/ui/Button';
-import { ArrowLeftIcon, PrintIcon } from '../components/ui/Icons';
+import { ArrowLeftIcon, DownloadIcon, PrintIcon } from '../components/ui/Icons';
 import { LoadingBlock } from '../components/ui/Spinner';
+import { generateMarkListPdf } from '../lib/pdf/generateMarkListPdf';
 
 export function PrintPage({ classId, examId }: { classId: string; examId?: string }) {
   const { t } = useTranslation();
@@ -16,6 +17,8 @@ export function PrintPage({ classId, examId }: { classId: string; examId?: strin
   
   // Default orientation is PORTRAIT per requirement #2
   const [orientation, setOrientation] = useState<'portrait' | 'landscape'>('portrait');
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [pdfError, setPdfError] = useState<string | null>(null);
 
   const evaluated = useMemo(() => {
     if (!data) return [];
@@ -81,6 +84,20 @@ export function PrintPage({ classId, examId }: { classId: string; examId?: strin
 
   const handlePrint = () => {
     window.print();
+  };
+
+  const handleSavePdf = async () => {
+    if (!data || isGeneratingPdf) return;
+    setIsGeneratingPdf(true);
+    setPdfError(null);
+    try {
+      await generateMarkListPdf({ data, orientation, t });
+    } catch (err) {
+      console.error('PDF generation failure:', err);
+      setPdfError(t('print.pdfError'));
+    } finally {
+      setIsGeneratingPdf(false);
+    }
   };
 
   const renderPrintRow = (student: typeof students[0], res: ReturnType<typeof evaluateStudent>) => (
@@ -156,12 +173,31 @@ export function PrintPage({ classId, examId }: { classId: string; examId?: strin
               </select>
             </label>
 
-            <Button variant="primary" size="md" icon={<PrintIcon />} onClick={handlePrint} id="print-now-btn">
+            <Button
+              variant="primary"
+              size="md"
+              icon={<DownloadIcon />}
+              onClick={() => void handleSavePdf()}
+              disabled={isGeneratingPdf}
+              id="save-as-pdf-btn"
+            >
+              {isGeneratingPdf ? t('print.generatingPdf') : t('print.saveAsPdf')}
+            </Button>
+
+            <Button variant="secondary" size="md" icon={<PrintIcon />} onClick={handlePrint} id="print-now-btn">
               {t('print.printNow')}
             </Button>
           </div>
         </div>
       </header>
+
+      {pdfError && (
+        <div className="no-print mx-auto max-w-5xl px-4 pt-4">
+          <Alert tone="error" action={<Button variant="ghost" size="sm" onClick={() => setPdfError(null)}>{t('common.cancel')}</Button>}>
+            {pdfError}
+          </Alert>
+        </div>
+      )}
 
       {/* Printable Paper Document */}
       <main className="p-4 sm:p-8">
