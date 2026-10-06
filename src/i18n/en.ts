@@ -223,6 +223,9 @@ export const en = {
     sealStamp: 'Seal / Stamp',
     teacherSignature: 'Class Teacher Signature',
     principalSignature: 'Principal / Head Signature',
+    saveAsPdf: 'Save as PDF',
+    generatingPdf: 'Generating PDF...',
+    pdfError: 'Could not generate PDF. Please try again.',
   },
 
   validation: {

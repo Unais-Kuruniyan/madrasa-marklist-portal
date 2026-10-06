@@ -225,6 +225,9 @@ export const ml: Translations = {
     sealStamp: 'മുദ്ര / സീൽ',
     teacherSignature: 'ക്ലാസ് അധ്യാപകന്റെ ഒപ്പ്',
     principalSignature: 'പ്രിൻസിപ്പൽ / ഹെഡ് ഒപ്പ്',
+    saveAsPdf: 'PDF ആയി സേവ് ചെയ്യുക',
+    generatingPdf: 'PDF തയ്യാറാക്കുന്നു...',
+    pdfError: 'PDF തയ്യാറാക്കാൻ കഴിഞ്ഞില്ല. വീണ്ടും ശ്രമിക്കുക.',
   },
 
   validation: {
