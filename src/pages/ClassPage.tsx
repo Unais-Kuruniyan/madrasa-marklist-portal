@@ -7,12 +7,13 @@ import { deleteStudent, getClassDetail, saveExamination } from '../lib/supabase/
 import { handleError } from '../lib/supabase/errors';
 import type { Student } from '../types';
 import { StudentForm } from '../components/StudentForm';
+import { ImportMarkListModal } from '../components/import/ImportMarkListModal';
 import { StudentTable } from '../components/StudentTable';
 import { Alert } from '../components/ui/Alert';
 import { Button, LinkButton } from '../components/ui/Button';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { EmptyState } from '../components/ui/EmptyState';
-import { ArrowLeftIcon, EditIcon, PlusIcon, PrintIcon } from '../components/ui/Icons';
+import { ArrowLeftIcon, EditIcon, ImageIcon, PlusIcon, PrintIcon } from '../components/ui/Icons';
 import { LoadingBlock } from '../components/ui/Spinner';
 import { TextField } from '../components/ui/TextField';
 
@@ -25,6 +26,7 @@ export function ClassPage({ classId, examId }: { classId: string; examId?: strin
   const [deleting, setDeleting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [showPhotoImport, setShowPhotoImport] = useState(false);
 
   // New Exam Modal state
   const [showNewExamModal, setShowNewExamModal] = useState(false);
@@ -218,6 +220,20 @@ export function ClassPage({ classId, examId }: { classId: string; examId?: strin
               </>
             )}
           </h2>
+          {!editingStudent && (
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={<ImageIcon className="size-4" />}
+              onClick={() => {
+                setSuccessMessage(null);
+                setShowPhotoImport(true);
+              }}
+              id="import-from-photo-btn"
+            >
+              {t('photoImport.importFromPhoto')}
+            </Button>
+          )}
           {editingStudent && (
             <Button variant="ghost" size="sm" onClick={handleCancelEdit}>
               {t('class.cancelEdit')}
@@ -249,6 +265,18 @@ export function ClassPage({ classId, examId }: { classId: string; examId?: strin
           onDeleteStudent={setStudentToDelete}
         />
       </section>
+
+      {showPhotoImport && (
+        <ImportMarkListModal
+          detail={data}
+          onClose={() => setShowPhotoImport(false)}
+          onImported={(count) => {
+            setShowPhotoImport(false);
+            setSuccessMessage(t('photoImport.importedSuccess', { count }));
+            void reload();
+          }}
+        />
+      )}
 
       {/* Delete Confirmation Modal */}
       <ConfirmDialog
