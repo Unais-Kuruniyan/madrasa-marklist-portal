@@ -212,8 +212,8 @@ export function PrintPage({ classId, examId }: { classId: string; examId?: strin
             <div className="relative mb-5 pt-1 pb-3 border-b-2 border-slate-900">
               {/* Prominent Class Box on the RIGHT */}
               <div className="absolute right-0 top-0 border-2 border-black px-4 py-1.5 bg-slate-50 text-center min-w-[95px]">
-                <span className="block text-[9px] font-bold uppercase tracking-widest text-slate-600">{t('print.classBoxLabel')}</span>
-                <strong className="text-xl font-extrabold uppercase text-black">{schoolClass.className}</strong>
+                <span className="block text-[9px] font-bold uppercase tracking-widest text-slate-900">{t('print.classBoxLabel')}</span>
+                <strong className="text-3xl font-extrabold uppercase text-black">{schoolClass.className}</strong>
               </div>
 
               <div className="text-center pr-28 pl-4">
@@ -240,7 +240,7 @@ export function PrintPage({ classId, examId }: { classId: string; examId?: strin
                 <thead>
                   <tr>
                     <th style={{ width: '50px' }}>{t('student.rollNumber')}</th>
-                    <th style={{ textAlign: 'left', paddingLeft: '8px', minWidth: '140px' }}>{t('student.name')}</th>
+                    <th style={{ textAlign: 'center', minWidth: '140px' }}>{t('student.name')}</th>
                     {config.normalSubjects.map((s) => (
                       <th key={s.id} style={{ minWidth: '65px' }}>
                         {s.name}
@@ -271,7 +271,7 @@ export function PrintPage({ classId, examId }: { classId: string; examId?: strin
                         <Fragment>
                           <tr style={{ background: '#f1f5f9', fontWeight: '700', textTransform: 'uppercase', fontSize: '10.5px' }}>
                             <td colSpan={colSpanCount} style={{ padding: '4px 8px', textAlign: 'left' }}>
-                              ── {t('student.boys').toUpperCase()} ({boysGroup.length}) ──
+                              {t('student.boys').toUpperCase()} ({boysGroup.length})
                             </td>
                           </tr>
                           {boysGroup.map(({ student, result }) => renderPrintRow(student, result))}
@@ -283,7 +283,7 @@ export function PrintPage({ classId, examId }: { classId: string; examId?: strin
                         <Fragment>
                           <tr style={{ background: '#fdf2f8', fontWeight: '700', textTransform: 'uppercase', fontSize: '10.5px' }}>
                             <td colSpan={colSpanCount} style={{ padding: '4px 8px', textAlign: 'left' }}>
-                              ── {t('student.girls').toUpperCase()} ({girlsGroup.length}) ──
+                             {t('student.girls').toUpperCase()} ({girlsGroup.length})
                             </td>
                           </tr>
                           {girlsGroup.map(({ student, result }) => renderPrintRow(student, result))}
