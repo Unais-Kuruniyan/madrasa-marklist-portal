@@ -6,11 +6,12 @@ import { deleteClass, listClasses } from '../lib/supabase/api';
 import { handleError } from '../lib/supabase/errors';
 import type { ClassListItem } from '../types';
 import { ClassCard } from '../components/ClassCard';
+import { ImportMarkListModal } from '../components/import/ImportMarkListModal';
 import { Alert } from '../components/ui/Alert';
 import { Button, LinkButton } from '../components/ui/Button';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { EmptyState } from '../components/ui/EmptyState';
-import { PlusIcon, RefreshIcon, SearchIcon } from '../components/ui/Icons';
+import { CameraIcon, PlusIcon, RefreshIcon, SearchIcon } from '../components/ui/Icons';
 import { Skeleton } from '../components/ui/Spinner';
 
 export function DashboardPage() {
@@ -20,6 +21,7 @@ export function DashboardPage() {
   const [toDelete, setToDelete] = useState<ClassListItem | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [showHomeImportModal, setShowHomeImportModal] = useState(false);
 
   const classes = useMemo(() => data ?? [], [data]);
   const filtered = useMemo(() => {
@@ -59,10 +61,21 @@ export function DashboardPage() {
           <p className="mt-1 text-sm text-slate-500">{t('dashboard.subtitle')}</p>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-[auto_1fr] sm:items-end">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[auto_auto_1fr] sm:items-end">
           <LinkButton href={paths.newClass()} variant="primary" size="lg" icon={<PlusIcon />} id="create-class-button">
             {t('dashboard.createNewClass')}
           </LinkButton>
+
+          <Button
+            variant="secondary"
+            size="lg"
+            icon={<CameraIcon className="size-5 text-brand-700" />}
+            onClick={() => setShowHomeImportModal(true)}
+            id="home-import-photo-button"
+            className="border-brand-300 bg-brand-50/50 hover:bg-brand-100/60 font-semibold"
+          >
+            📷 {t('photoImport.homeImportButton')}
+          </Button>
 
           {classes.length > 0 && (
             <div className="sm:max-w-sm">
@@ -185,6 +198,20 @@ export function DashboardPage() {
       >
         <p>{t('dashboard.deleteConfirmBody')}</p>
       </ConfirmDialog>
+
+      {showHomeImportModal && (
+        <ImportMarkListModal
+          mode="home"
+          onClose={() => setShowHomeImportModal(false)}
+          onImported={(_count, createdClassId) => {
+            setShowHomeImportModal(false);
+            void reload();
+            if (createdClassId) {
+              navigate(paths.classPage(createdClassId));
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

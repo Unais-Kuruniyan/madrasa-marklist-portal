@@ -13,6 +13,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@google/genai": "^2.27.0",
     "@react-pdf/renderer": "^4.9.0",
     "@supabase/supabase-js": "^2.117.2",
     "@types/html2canvas": "^0.5.35",

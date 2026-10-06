@@ -3,6 +3,9 @@
   "framework": "vite",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
+  "functions": {
+    "api/import-marklist.ts": { "maxDuration": 60 }
+  },
   "crons": [
     {
       "path": "/api/health/supabase",
