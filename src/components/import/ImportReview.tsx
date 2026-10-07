@@ -6,10 +6,7 @@ import {
   evaluateRow,
   findTotalMismatches,
   importableSubjects,
-  isStudentSaveable,
-  missingStudentEstimate,
   newBlankRow,
-  numericMarks,
   remapColumn,
   remapRowsToSavedDetail,
   updateSubjectName,
@@ -26,7 +23,8 @@ import { handleError } from '../../lib/supabase/errors';
 import { cx, formatMark } from '../../utils/format';
 import { Alert } from '../ui/Alert';
 import { Button } from '../ui/Button';
-import { CheckIcon, PlusIcon, RefreshIcon, SearchIcon, TrashIcon, WarnIcon } from '../ui/Icons';
+import { ConfirmDialog } from '../ui/ConfirmDialog';
+import { CheckIcon, PlusIcon, RefreshIcon, SearchIcon, TrashIcon, WarnIcon, XIcon } from '../ui/Icons';
 import { ResultBadge } from '../ui/ResultBadge';
 import { SourceCropModal } from './SourceCropModal';
 
@@ -64,10 +62,26 @@ export function ImportReview({
   const [selectedTargetClassId, setSelectedTargetClassId] = useState<string>('');
   const [submitted, setSubmitted] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [savingProgressText, setSavingProgressText] = useState<string>('');
   const [saveMessage, setSaveMessage] = useState<{ tone: 'error' | 'warning'; text: string } | null>(null);
   const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
 
-  // Crop Modal state for Image-Cell Verification (Section 16)
+  // Lightbox modal state for photo preview on mobile
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+
+  // Row deletion confirmation state
+  const [toDeleteRow, setToDeleteRow] = useState<DraftRow | null>(null);
+
+  // Success state after saving
+  const [savedSuccessData, setSavedSuccessData] = useState<{
+    count: number;
+    createdClassId?: string;
+    boys: number;
+    girls: number;
+    subjects: number;
+  } | null>(null);
+
+  // Crop Modal state for Image-Cell Verification
   const [cropTarget, setCropTarget] = useState<{
     box?: BoundingBox | null;
     title: string;
@@ -85,7 +99,9 @@ export function ImportReview({
   }, [draft.rows, detail, t]);
 
   const invalidCount = draft.rows.filter((r) => !validations.get(r.key)?.ok).length;
-  const missing = missingStudentEstimate(detail, draft.rows.length);
+
+  const boysCount = draft.rows.filter((r) => r.category === 'boys').length;
+  const girlsCount = draft.rows.filter((r) => r.category === 'girls').length;
 
   /* -------------------- row editing -------------------- */
 
@@ -119,7 +135,10 @@ export function ImportReview({
     if (invalidCount > 0) {
       setSaveMessage({ tone: 'error', text: t('photoImport.rowsNeedAttention', { count: invalidCount }) });
       const first = draft.rows.find((r) => !validations.get(r.key)?.ok);
-      if (first) document.getElementById(`import-row-${first.key}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      if (first) {
+        const el = document.getElementById(`import-card-${first.key}`) || document.getElementById(`import-row-${first.key}`);
+        el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
       return;
     }
 
@@ -141,6 +160,8 @@ export function ImportReview({
           return;
         }
 
+        setSavingProgressText(t('photoImport.savingStepCreatingClass'));
+
         const classInput = {
           institutionName: draft.header.institutionName,
           institutionLocation: draft.header.institutionLocation,
@@ -158,20 +179,17 @@ export function ImportReview({
         createdClassId = result.classId;
         console.log(`[ImportSave]   -> Class created: classId = "${result.classId}", examId = "${result.examId}"`);
 
-        // STEP 2: Fetch created class detail from database (contains real database subject UUIDs)
+        setSavingProgressText(t('photoImport.savingStepCreatingSubjects'));
         console.log('[ImportSave] STEP 2: Fetching created class detail from database...');
         const realDetail = await getClassDetail(result.classId, result.examId);
         if (!realDetail) {
           throw new Error('Could not fetch newly created class detail from database.');
         }
-        console.log(`[ImportSave]   -> Fetched class detail successfully. Real subjects count: ${realDetail.allSubjects.length}`);
 
-        // STEP 3: Map draft rows (which used subj-col-0, etc.) to realDetail (which uses real UUIDs)
         console.log('[ImportSave] STEP 3: Mapping temporary subject IDs to real database UUIDs...');
         targetRows = remapRowsToSavedDetail(draft.rows, detail, realDetail);
         activeClassDetail = realDetail;
 
-        // STEP 4: Re-validate mapped rows against realDetail
         const realValidations = new Map<string, RowValidation>();
         for (const r of targetRows) {
           realValidations.set(r.key, validateRow(r, targetRows, realDetail, t));
@@ -187,14 +205,7 @@ export function ImportReview({
         await onSelectExistingClass(selectedTargetClassId);
       }
 
-      console.log(`[ImportSave] Student Validation Diagnostics (${targetRows.length} total rows):`);
-      for (const r of targetRows) {
-        const v = targetValidations.get(r.key);
-        const saveable = isStudentSaveable(r, activeClassDetail, v);
-        const parsedCount = Object.keys(numericMarks(r, activeClassDetail)).length;
-        console.log(`[ImportSave]   Student Roll ${r.roll || '?'} (${r.category || 'none'}) — "${r.name}": SAVEABLE=${saveable}, valid=${v?.ok}, markCount=${parsedCount}, errors=`, v?.errors);
-      }
-
+      setSavingProgressText(t('photoImport.savingStepSavingStudents'));
       const batch = buildPhotoSaveBatch(targetRows, activeClassDetail, targetValidations);
       console.log(`[ImportSave] STEP 4: Saving ${batch.length} student records...`);
 
@@ -209,9 +220,9 @@ export function ImportReview({
         const item = batch[i];
         const studentDesc = `Roll ${item.input.rollNumber} (${item.input.category === 'boys' ? 'Boys' : 'Girls'}) — ${item.input.studentName}`;
         try {
-          console.log(`[ImportSave]   Saving student ${i + 1}/${batch.length}: ${studentDesc} (examId: ${item.input.examId}, marks count: ${item.input.marks.length})...`);
+          console.log(`[ImportSave]   Saving student ${i + 1}/${batch.length}: ${studentDesc}...`);
           const savedStudentId = await saveStudent(item.input);
-          console.log(`[ImportSave]     -> Student saved successfully! studentId = "${savedStudentId}"`);
+          console.log(`[ImportSave]     -> Saved: studentId = "${savedStudentId}"`);
           savedKeys.push(item.key);
         } catch (err: any) {
           const rawErr = err?.message || String(err);
@@ -225,9 +236,8 @@ export function ImportReview({
       if (failedCount > 0) {
         console.error(`[ImportSave] Save process incomplete: ${savedKeys.length} saved, ${failedCount} failed.`);
         if (createdClassId) {
-          console.warn(`[ImportSave] Rolling back newly created class ${createdClassId} to prevent orphaned incomplete class...`);
+          console.warn(`[ImportSave] Rolling back newly created class ${createdClassId}...`);
           await deleteClass(createdClassId);
-          console.warn('[ImportSave] Class rollback completed successfully.');
           createdClassId = undefined;
         }
         const firstErr = Object.values(failures)[0];
@@ -237,16 +247,21 @@ export function ImportReview({
         return;
       }
 
-      console.log(`[ImportSave] ALL ${savedKeys.length} STUDENTS SAVED SUCCESSFULLY! Finishing import.`);
+      setSavingProgressText(t('photoImport.savingStepFinishing'));
+      console.log(`[ImportSave] ALL ${savedKeys.length} STUDENTS SAVED SUCCESSFULLY!`);
       setSaving(false);
-      onImported(savedKeys.length, createdClassId);
+      setSavedSuccessData({
+        count: savedKeys.length,
+        createdClassId,
+        boys: boysCount,
+        girls: girlsCount,
+        subjects: subjects.length,
+      });
     } catch (err: any) {
       console.error('[ImportSave] Critical exception during import save:', err);
       if (createdClassId) {
         try {
-          console.warn(`[ImportSave] Rolling back newly created class ${createdClassId}...`);
           await deleteClass(createdClassId);
-          console.warn('[ImportSave] Class rollback completed successfully.');
         } catch (rollbackErr) {
           console.error('[ImportSave] Failed to rollback class:', rollbackErr);
         }
@@ -272,7 +287,6 @@ export function ImportReview({
     const rawVal = row.marks[subjectId] ?? '';
     const isFlagged = row.review.marks[subjectId] === true;
 
-    // Find cell box if present
     const match = draft.mapping.matches.find((m) => m.subjectId === subjectId);
     const cellObj = match ? row.cells[match.columnIndex] : undefined;
 
@@ -284,7 +298,7 @@ export function ImportReview({
             inputMode="decimal"
             autoComplete="off"
             maxLength={6}
-            className={cx(cellClass(v.errors.marks[subjectId], rawVal, isFlagged), 'w-14 text-center')}
+            className={cx(cellClass(v.errors.marks[subjectId], rawVal, isFlagged), 'w-14 text-center min-h-[36px]')}
             value={row.absent ? '' : rawVal}
             disabled={row.absent}
             aria-invalid={submitted && v.errors.marks[subjectId] ? true : undefined}
@@ -307,7 +321,7 @@ export function ImportReview({
                   detectedValue: cellObj.value ?? (cellObj.status === 'absent' ? 'AB' : cellObj.status),
                 })
               }
-              className="text-slate-400 hover:text-brand-700 p-0.5 rounded"
+              className="text-slate-400 hover:text-brand-700 p-1 rounded min-h-[36px] min-w-[28px] flex items-center justify-center"
               title={t('photoImport.viewSourceArea')}
             >
               <SearchIcon className="size-3.5" />
@@ -447,7 +461,7 @@ export function ImportReview({
                       detectedValue: row.name,
                     })
                   }
-                  className="rounded p-1.5 text-slate-500 hover:bg-slate-100 hover:text-brand-700"
+                  className="rounded p-1.5 text-slate-500 hover:bg-slate-100 hover:text-brand-700 min-h-[36px] min-w-[36px] flex items-center justify-center"
                   title={t('photoImport.viewSourceArea')}
                 >
                   <SearchIcon className="size-4" />
@@ -455,8 +469,8 @@ export function ImportReview({
               )}
               <button
                 type="button"
-                onClick={() => deleteRow(row.key)}
-                className="rounded p-1.5 text-fail-700 hover:bg-fail-50"
+                onClick={() => setToDeleteRow(row)}
+                className="rounded p-1.5 text-fail-700 hover:bg-fail-50 min-h-[36px] min-w-[36px] flex items-center justify-center"
                 title={t('photoImport.deleteStudent')}
               >
                 <TrashIcon className="size-4" />
@@ -501,55 +515,342 @@ export function ImportReview({
     );
   };
 
+  const renderMobileStudentCard = (row: DraftRow) => {
+    const v = validations.get(row.key)!;
+    const res = evaluateRow(row, detail);
+    const flagged =
+      row.review.category ||
+      row.review.roll ||
+      row.review.name ||
+      (!row.absent && Object.values(row.review.marks).some(Boolean)) ||
+      v.duplicate !== null;
+
+    return (
+      <div
+        key={row.key}
+        id={`import-card-${row.key}`}
+        className={cx(
+          'card p-4 space-y-3.5 border-2 transition',
+          flagged ? 'border-amber-300 bg-amber-50/30' : 'border-slate-200 bg-white',
+          v.errors.roll || v.errors.name || v.errors.category ? 'border-red-300' : '',
+        )}
+      >
+        <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-2">
+          <div className="flex items-center gap-2 min-w-0">
+            {flagged ? (
+              <span className="inline-flex items-center gap-1 text-xs font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
+                <WarnIcon className="size-3.5 shrink-0" /> {t('photoImport.needsReview')}
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
+                <CheckIcon className="size-3.5 shrink-0" /> {t('photoImport.highConfidence')}
+              </span>
+            )}
+            <span className="text-xs font-bold text-slate-700 uppercase truncate">
+              {row.category === 'boys' ? t('student.boys') : row.category === 'girls' ? t('student.girls') : t('photoImport.selectCategory')} • Roll {row.roll || '?'}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1 shrink-0">
+            {row.box && (
+              <button
+                type="button"
+                onClick={() =>
+                  setCropTarget({
+                    box: row.box,
+                    title: `Student: ${row.name || `Roll ${row.roll}`}`,
+                    detectedValue: row.name,
+                  })
+                }
+                className="p-2 text-slate-500 hover:text-brand-700 rounded-lg min-h-[40px] min-w-[40px] flex items-center justify-center"
+                title={t('photoImport.viewSourceArea')}
+              >
+                <SearchIcon className="size-4" />
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setToDeleteRow(row)}
+              className="p-2 text-fail-700 hover:bg-fail-50 rounded-lg min-h-[40px] min-w-[40px] flex items-center justify-center"
+              title={t('photoImport.deleteStudent')}
+            >
+              <TrashIcon className="size-4" />
+            </button>
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1">
+            {t('student.name')}
+          </label>
+          <input
+            type="text"
+            maxLength={150}
+            autoComplete="off"
+            className={cx(
+              'field-input min-h-[44px] text-base font-semibold',
+              submitted && v.errors.name && 'border-red-400 bg-fail-50',
+            )}
+            value={row.name}
+            onChange={(e) =>
+              updateRow(row.key, (r) => ({ ...r, name: e.target.value, review: { ...r.review, name: false } }))
+            }
+            placeholder={t('student.fullNamePlaceholder')}
+          />
+          {submitted && v.errors.name && <p className="mt-1 text-xs text-fail-700">{v.errors.name}</p>}
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1">
+              Category
+            </label>
+            <div className="flex items-center rounded-lg border border-slate-300 p-0.5 bg-slate-100 min-h-[44px]">
+              <button
+                type="button"
+                onClick={() =>
+                  updateRow(row.key, (r) => ({ ...r, category: 'boys', review: { ...r.review, category: false } }))
+                }
+                className={cx(
+                  'flex-1 min-h-[38px] rounded-md text-xs font-bold transition-all',
+                  row.category === 'boys' ? 'bg-slate-900 text-white shadow-xs' : 'text-slate-700 hover:text-slate-900',
+                )}
+              >
+                {t('student.boys')}
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  updateRow(row.key, (r) => ({ ...r, category: 'girls', review: { ...r.review, category: false } }))
+                }
+                className={cx(
+                  'flex-1 min-h-[38px] rounded-md text-xs font-bold transition-all',
+                  row.category === 'girls' ? 'bg-pink-600 text-white shadow-xs' : 'text-slate-700 hover:text-slate-900',
+                )}
+              >
+                {t('student.girls')}
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1">
+              {t('student.rollNumber')}
+            </label>
+            <input
+              type="text"
+              inputMode="numeric"
+              maxLength={5}
+              className={cx(
+                'field-input min-h-[44px] text-center text-base font-bold tabular-nums',
+                submitted && v.errors.roll && 'border-red-400 bg-fail-50',
+              )}
+              value={row.roll}
+              onChange={(e) =>
+                updateRow(row.key, (r) => ({
+                  ...r,
+                  roll: e.target.value,
+                  rollAssigned: false,
+                  review: { ...r.review, roll: false },
+                }))
+              }
+            />
+            {submitted && v.errors.roll && <p className="mt-1 text-xs text-fail-700">{v.errors.roll}</p>}
+          </div>
+        </div>
+
+        <label className="flex items-center gap-2.5 rounded-lg border border-slate-200 bg-slate-50 p-2.5 cursor-pointer">
+          <input
+            type="checkbox"
+            className="size-5 accent-brand-700 rounded"
+            checked={row.absent}
+            onChange={(e) => updateRow(row.key, (r) => ({ ...r, absent: e.target.checked }))}
+          />
+          <span className="text-xs font-bold text-slate-800">{t('student.absentLabel')} (AB)</span>
+        </label>
+
+        {!row.absent && (
+          <div className="space-y-2 pt-1 border-t border-slate-100">
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">{t('student.marksLegend')}</p>
+            <div className="grid grid-cols-2 gap-2.5">
+              {config.normalSubjects.map((s) => {
+                const rawVal = row.marks[s.id] ?? '';
+                const err = v.errors.marks[s.id];
+                const isFlaggedMark = row.review.marks[s.id] === true;
+                return (
+                  <div key={s.id} className="rounded-lg border border-slate-200 p-2 bg-slate-50/60">
+                    <label className="block text-[11px] font-bold text-slate-700 truncate" title={s.name}>
+                      {s.name}
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      maxLength={6}
+                      className={cx(
+                        'field-input mt-1 min-h-[44px] text-center font-bold text-base tabular-nums',
+                        submitted && err && 'border-red-400 bg-fail-50',
+                        !err && isFlaggedMark && 'border-amber-400 bg-amber-50',
+                      )}
+                      value={rawVal}
+                      onChange={(e) =>
+                        updateRow(row.key, (r) => ({
+                          ...r,
+                          marks: { ...r.marks, [s.id]: e.target.value },
+                          review: { ...r.review, marks: { ...r.review.marks, [s.id]: false } },
+                        }))
+                      }
+                      placeholder="0-100"
+                    />
+                  </div>
+                );
+              })}
+
+              {withQH && config.quranSubject && config.hifzSubject && (
+                <>
+                  <div className="rounded-lg border border-brand-200 p-2 bg-brand-50/40">
+                    <label className="block text-[11px] font-bold text-brand-900 truncate">
+                      {t('student.quranLabel')}
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      maxLength={6}
+                      className="field-input mt-1 min-h-[44px] text-center font-bold text-base tabular-nums"
+                      value={row.marks[config.quranSubject.id] ?? ''}
+                      onChange={(e) =>
+                        updateRow(row.key, (r) => ({
+                          ...r,
+                          marks: { ...r.marks, [config.quranSubject!.id]: e.target.value },
+                        }))
+                      }
+                    />
+                  </div>
+                  <div className="rounded-lg border border-brand-200 p-2 bg-brand-50/40">
+                    <label className="block text-[11px] font-bold text-brand-900 truncate">
+                      {t('student.hifzLabel')}
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      maxLength={6}
+                      className="field-input mt-1 min-h-[44px] text-center font-bold text-base tabular-nums"
+                      value={row.marks[config.hifzSubject.id] ?? ''}
+                      onChange={(e) =>
+                        updateRow(row.key, (r) => ({
+                          ...r,
+                          marks: { ...r.marks, [config.hifzSubject!.id]: e.target.value },
+                        }))
+                      }
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
+        <div className="flex items-center justify-between pt-2 border-t border-slate-200 text-xs font-bold text-slate-800">
+          {withQH && (
+            <div>
+              <span className="text-slate-500 font-normal">Quran+Hifz: </span>
+              <span className="text-brand-900">{row.absent ? '—' : formatMark(res.quranHifzTotal)}</span>
+            </div>
+          )}
+          <div>
+            <span className="text-slate-500 font-normal">{t('results.grandTotal')}: </span>
+            <span>{row.absent ? '—' : res.status === 'complete' ? formatMark(res.grandTotal) : '—'}</span>
+          </div>
+          <div>
+            {row.absent ? (
+              <ResultBadge result={{ status: 'absent', result: null }} />
+            ) : res.status === 'complete' ? (
+              <ResultBadge result={res} />
+            ) : (
+              <span className="text-slate-400">—</span>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderGroup = (cat: GroupKey) => {
     const rows = draft.rows.filter((r) => r.category === cat);
     if (rows.length === 0 && cat === '') return null;
     const title = cat === 'boys' ? t('student.boys') : cat === 'girls' ? t('student.girls') : t('photoImport.selectCategory');
+    const addLabel = cat === 'boys' ? t('photoImport.addBoy') : cat === 'girls' ? t('photoImport.addGirl') : t('photoImport.addStudent');
     const headTone =
       cat === 'boys'
-        ? 'bg-slate-100 text-slate-800'
+        ? 'bg-slate-100 text-slate-800 border-slate-200'
         : cat === 'girls'
-          ? 'bg-pink-50 text-pink-900'
-          : 'bg-amber-50 text-amber-900';
+          ? 'bg-pink-50 text-pink-900 border-pink-200'
+          : 'bg-amber-50 text-amber-900 border-amber-200';
 
     return (
-      <section key={cat || 'unknown'} className="card overflow-hidden" aria-label={title}>
-        <div className={cx('flex items-center justify-between px-4 py-2 text-xs font-bold uppercase tracking-wider', headTone)}>
+      <section key={cat || 'unknown'} className="space-y-3" aria-label={title}>
+        <div className={cx('flex items-center justify-between px-4 py-2.5 rounded-xl border font-bold text-xs uppercase tracking-wider', headTone)}>
           <span>
             {title.toUpperCase()} ({rows.length})
           </span>
           {cat !== '' && (
-            <Button variant="secondary" size="sm" icon={<PlusIcon className="size-4" />} onClick={() => addRow(cat)} className="normal-case">
-              {t('photoImport.addStudent')}
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={<PlusIcon className="size-4" />}
+              onClick={() => addRow(cat)}
+              className="normal-case font-bold min-h-[36px]"
+            >
+              {addLabel}
             </Button>
           )}
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="border-y border-slate-200 bg-slate-50 text-xs uppercase tracking-wider text-slate-600">
-              <tr>
-                <th scope="col" className="w-8 px-2 py-2" />
-                <th scope="col" className="px-2 py-2 text-center">{t('student.rollNumber')}</th>
-                <th scope="col" className="px-2 py-2">{t('student.name')}</th>
-                <th scope="col" className="px-2 py-2">{t('student.categoryLabel')}</th>
-                <th scope="col" className="px-2 py-2 text-center" title={t('photoImport.colAbsentTitle')}>{t('photoImport.colAbsent')}</th>
-                {config.normalSubjects.map((s) => (
-                  <th key={s.id} scope="col" className="px-2 py-2 text-center">{s.name}</th>
-                ))}
-                {withQH && (
-                  <>
-                    <th scope="col" className="bg-brand-50/60 px-2 py-2 text-center">{t('student.quranLabel')}</th>
-                    <th scope="col" className="bg-brand-50/60 px-2 py-2 text-center">{t('student.hifzLabel')}</th>
-                    <th scope="col" className="bg-brand-100/70 px-2 py-2 text-center">{t('student.quranHifzLabel')}</th>
-                  </>
-                )}
-                <th scope="col" className="px-2 py-2 text-center">{t('results.grandTotal')}</th>
-                <th scope="col" className="px-2 py-2 text-center">{t('results.result')}</th>
-                <th scope="col" className="px-2 py-2 text-right"><span className="sr-only">{t('photoImport.colActions')}</span></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">{rows.map(renderRow)}</tbody>
-          </table>
+
+        {/* Mobile View: Cards Grid */}
+        <div className="space-y-3 lg:hidden">
+          {rows.map((row) => renderMobileStudentCard(row))}
+          {cat !== '' && (
+            <Button
+              variant="secondary"
+              size="lg"
+              fullWidth
+              icon={<PlusIcon className="size-5" />}
+              onClick={() => addRow(cat)}
+              className="min-h-12 text-sm font-bold justify-center border-dashed border-2"
+            >
+              + {addLabel}
+            </Button>
+          )}
+        </div>
+
+        {/* Desktop View: Table */}
+        <div className="hidden lg:block card overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="border-y border-slate-200 bg-slate-50 text-xs uppercase tracking-wider text-slate-600">
+                <tr>
+                  <th scope="col" className="w-8 px-2 py-2" />
+                  <th scope="col" className="px-2 py-2 text-center">{t('student.rollNumber')}</th>
+                  <th scope="col" className="px-2 py-2">{t('student.name')}</th>
+                  <th scope="col" className="px-2 py-2">{t('student.categoryLabel')}</th>
+                  <th scope="col" className="px-2 py-2 text-center" title={t('photoImport.colAbsentTitle')}>{t('photoImport.colAbsent')}</th>
+                  {config.normalSubjects.map((s) => (
+                    <th key={s.id} scope="col" className="px-2 py-2 text-center">{s.name}</th>
+                  ))}
+                  {withQH && (
+                    <>
+                      <th scope="col" className="bg-brand-50/60 px-2 py-2 text-center">{t('student.quranLabel')}</th>
+                      <th scope="col" className="bg-brand-50/60 px-2 py-2 text-center">{t('student.hifzLabel')}</th>
+                      <th scope="col" className="bg-brand-100/70 px-2 py-2 text-center">{t('student.quranHifzLabel')}</th>
+                    </>
+                  )}
+                  <th scope="col" className="px-2 py-2 text-center">{t('results.grandTotal')}</th>
+                  <th scope="col" className="px-2 py-2 text-center">{t('results.result')}</th>
+                  <th scope="col" className="px-2 py-2 text-right"><span className="sr-only">{t('photoImport.colActions')}</span></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">{rows.map(renderRow)}</tbody>
+            </table>
+          </div>
         </div>
       </section>
     );
@@ -579,7 +880,7 @@ export function ImportReview({
         </div>
         <input
           id={id}
-          className="field-input !py-2 !text-sm"
+          className="field-input !py-2 !text-sm min-h-[44px]"
           inputMode={inputMode}
           value={strVal}
           onChange={(e) => setHeader({ [key]: e.target.value })}
@@ -588,11 +889,73 @@ export function ImportReview({
     );
   };
 
-  const boysCount = draft.rows.filter((r) => r.category === 'boys').length;
-  const girlsCount = draft.rows.filter((r) => r.category === 'girls').length;
+  if (savedSuccessData) {
+    return (
+      <div className="card p-6 text-center space-y-5 max-w-md mx-auto my-8 animate-fade-in border-2 border-emerald-300 bg-emerald-50/40 shadow-lg">
+        <div className="size-16 rounded-full bg-emerald-500 text-white flex items-center justify-center mx-auto text-3xl shadow-md font-bold">
+          ✓
+        </div>
+        <div className="space-y-1">
+          <h2 className="text-2xl font-extrabold text-slate-900">{t('photoImport.importSuccessTitle')}</h2>
+          <p className="text-base font-bold text-emerald-800">
+            {t('photoImport.importSuccessCount', { count: savedSuccessData.count })}
+          </p>
+          <p className="text-xs text-slate-600">
+            {t('photoImport.importSuccessBreakdown', {
+              boys: savedSuccessData.boys,
+              girls: savedSuccessData.girls,
+              subjects: savedSuccessData.subjects,
+            })}
+          </p>
+        </div>
+
+        <div className="flex flex-col gap-2.5 pt-2">
+          <Button
+            size="lg"
+            variant="primary"
+            onClick={() => {
+              onImported(savedSuccessData.count, savedSuccessData.createdClassId);
+            }}
+            className="min-h-12 text-base font-bold justify-center shadow-md bg-brand-700 hover:bg-brand-800 text-white"
+          >
+            {t('photoImport.openCreatedClass')}
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-5">
+      {/* Top Mobile Stepper Header (Requirement #13) */}
+      <div className="flex items-center justify-between border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-600 rounded-xl overflow-x-auto shadow-xs gap-1.5">
+        <span className="flex items-center gap-1.5 text-brand-800 font-bold whitespace-nowrap">
+          <span className="flex size-5 items-center justify-center rounded-full bg-brand-800 text-[10px] text-white">1</span>
+          {t('photoImport.stepPhoto')}
+        </span>
+        <span className="text-slate-300">›</span>
+        <span className="flex items-center gap-1.5 text-brand-800 font-bold whitespace-nowrap">
+          <span className="flex size-5 items-center justify-center rounded-full bg-brand-800 text-[10px] text-white">2</span>
+          {t('photoImport.stepDetails')}
+        </span>
+        <span className="text-slate-300">›</span>
+        <span className="flex items-center gap-1.5 text-brand-800 font-bold whitespace-nowrap">
+          <span className="flex size-5 items-center justify-center rounded-full bg-brand-800 text-[10px] text-white">3</span>
+          {t('photoImport.stepSubjects')}
+        </span>
+        <span className="text-slate-300">›</span>
+        <span className="flex items-center gap-1.5 text-brand-800 font-bold whitespace-nowrap">
+          <span className="flex size-5 items-center justify-center rounded-full bg-brand-800 text-[10px] text-white">4</span>
+          {t('photoImport.stepStudents')}
+        </span>
+        <span className="text-slate-300">›</span>
+        <span className="flex items-center gap-1.5 text-slate-500 font-semibold whitespace-nowrap">
+          <span className="flex size-5 items-center justify-center rounded-full bg-slate-200 text-[10px] text-slate-700">5</span>
+          {t('photoImport.stepSave')}
+        </span>
+      </div>
+
+      {/* Top Review Header */}
       <div>
         <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">
           {isHomeMode ? t('photoImport.modeHomeTitle') : t('photoImport.reviewImportedData')}
@@ -600,33 +963,68 @@ export function ImportReview({
         <p className="mt-1 text-sm text-slate-600">{t('photoImport.reviewIntro')}</p>
       </div>
 
+      {/* Mobile Compact Summary Bar (Requirement #37) */}
+      <div className="card p-3 bg-brand-50/50 border-brand-200 flex flex-wrap items-center justify-between gap-2 text-xs">
+        <div className="flex items-center gap-3 font-semibold text-slate-800">
+          <span>👥 {draft.rows.length} {t('dashboard.students')} ({boysCount} {t('student.boys')}, {girlsCount} {t('student.girls')})</span>
+          <span>📚 {subjects.length} {t('dashboard.subjects')}</span>
+        </div>
+        {withQH && (
+          <span className="rounded-full bg-brand-100 px-2.5 py-0.5 font-bold text-brand-900 text-[11px]">
+            {t('class.quranHifzLabel')}
+          </span>
+        )}
+      </div>
+
+      {/* Collapsible Photo Preview on Mobile (Requirement #14) */}
+      <div className="lg:hidden card p-3 flex items-center justify-between gap-3 bg-white shadow-xs">
+        <div className="flex items-center gap-3 min-w-0">
+          <img
+            src={image.previewUrl}
+            alt={t('photoImport.originalPhoto')}
+            className="size-12 rounded-lg object-cover border border-slate-200 shrink-0 bg-slate-900"
+          />
+          <div className="min-w-0">
+            <p className="text-xs font-bold text-slate-900 truncate">{t('photoImport.originalPhoto')}</p>
+            <p className="text-[11px] text-slate-500 truncate">{t('photoImport.photoTemporary')}</p>
+          </div>
+        </div>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => setLightboxOpen(true)}
+          className="min-h-[40px] whitespace-nowrap shrink-0 font-bold"
+        >
+          🔍 {t('photoImport.viewFullImage')}
+        </Button>
+      </div>
+
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,2.4fr)] lg:items-start">
-        {/* Photo Preview Sidepanel (temporary RAM storage only) */}
-        <aside className="card p-3 lg:sticky lg:top-4">
+        {/* Desktop Sticky Photo Preview Sidepanel */}
+        <aside className="hidden lg:block card p-3 sticky top-4">
           <p className="text-sm font-semibold text-slate-800">{t('photoImport.originalPhoto')}</p>
           <p className="mb-2 text-xs text-slate-500">{t('photoImport.photoTemporary')}</p>
-          <a
-            href={image.previewUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="block overflow-hidden rounded-lg border border-slate-200 bg-slate-100"
+          <button
+            type="button"
+            onClick={() => setLightboxOpen(true)}
+            className="block w-full text-left overflow-hidden rounded-lg border border-slate-200 bg-slate-100 focus:outline-none"
           >
             <img
               src={image.previewUrl}
               alt={t('photoImport.originalPhoto')}
-              className="max-h-[50vh] w-full object-contain lg:max-h-[75vh]"
-              id="import-photo-preview"
+              className="max-h-[70vh] w-full object-contain"
+              id="import-photo-preview-desktop"
             />
-          </a>
+          </button>
         </aside>
 
         <div className="min-w-0 space-y-5">
-          {/* Metadata Review Card (Application Fields Only) */}
+          {/* Metadata Review Card (Requirement #15) */}
           <div className="card p-4 space-y-3">
             <h3 className="text-sm font-bold text-slate-900 border-b border-slate-100 pb-2">
               1. Class Information
             </h3>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {headerField('import-institution', t('photoImport.headerInstitution'), 'institutionName', 'institutionName')}
               {headerField('import-location', t('photoImport.headerLocation'), 'institutionLocation', 'location')}
               {headerField('import-range', t('photoImport.headerRange'), 'rangeName', 'range')}
@@ -641,7 +1039,7 @@ export function ImportReview({
                 </div>
                 <select
                   id="import-exam-select"
-                  className="field-input !py-2 !text-sm"
+                  className="field-input !py-2 !text-sm min-h-[44px]"
                   value={
                     [
                       'Half-Yearly Examination',
@@ -683,7 +1081,7 @@ export function ImportReview({
                 draft.header.examName === 'Custom' ? (
                   <input
                     type="text"
-                    className="field-input mt-1.5 !py-1.5 !text-sm"
+                    className="field-input mt-1.5 !py-1.5 !text-sm min-h-[44px]"
                     placeholder={t('class.customExamPlaceholder')}
                     value={draft.header.examName}
                     onChange={(e) => setHeader({ examName: e.target.value })}
@@ -695,29 +1093,6 @@ export function ImportReview({
               </div>
 
               {headerField('import-year', t('photoImport.headerYear'), 'examYear', 'examYear', 'numeric')}
-            </div>
-          </div>
-
-          {/* Pre-Save Validation Summary Block */}
-          <div className={cx('card p-4 border-2 transition', invalidCount === 0 ? 'border-emerald-200 bg-emerald-50/20' : 'border-amber-300 bg-amber-50/20')}>
-            <h3 className="text-sm font-bold text-slate-900 mb-2 flex items-center justify-between">
-              <span>Import Validation Summary</span>
-              {invalidCount === 0 ? (
-                <span className="text-xs font-semibold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full flex items-center gap-1">
-                  <CheckIcon className="size-3.5" /> Ready to save
-                </span>
-              ) : (
-                <span className="text-xs font-semibold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full flex items-center gap-1">
-                  <WarnIcon className="size-3.5" /> {invalidCount} row(s) need attention
-                </span>
-              )}
-            </h3>
-
-            <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4 text-slate-700">
-              <div><span className="font-semibold">Students:</span> {draft.rows.length} ({boysCount} Boys, {girlsCount} Girls)</div>
-              <div><span className="font-semibold">Mapped Subjects:</span> {subjects.length}</div>
-              <div><span className="font-semibold">Class Name:</span> {draft.header.className || '⚠ Missing'}</div>
-              <div><span className="font-semibold">Exam & Year:</span> {draft.header.examName ? `${draft.header.examName} (${draft.header.examYear})` : '⚠ Missing'}</div>
             </div>
           </div>
 
@@ -760,7 +1135,7 @@ export function ImportReview({
                 <div className="space-y-2 pt-2">
                   <label className="block text-xs font-semibold text-slate-700">{t('photoImport.selectTargetClass')}</label>
                   <select
-                    className="field-input"
+                    className="field-input min-h-[44px]"
                     value={selectedTargetClassId}
                     onChange={(e) => {
                       setSelectedTargetClassId(e.target.value);
@@ -781,15 +1156,10 @@ export function ImportReview({
             </div>
           )}
 
-          {/* Counts & Analysis Warnings */}
-          <Alert tone={missing > 0 ? 'warning' : 'info'}>
-            <span className="font-semibold">{t('photoImport.studentsDetected', { count: draft.rows.length })}</span>
-            {missing > 0 && <> {t('photoImport.studentsMissing', { missing })}</>}
-          </Alert>
-
+          {/* Analysis Warnings */}
           {draft.warnings.length > 0 && (
             <Alert tone="info" title={t('photoImport.notesFromAnalysis')}>
-              <ul className="list-disc space-y-0.5 pl-5">
+              <ul className="list-disc space-y-0.5 pl-5 text-xs">
                 {draft.warnings.map((w, i) => (
                   <li key={i}>{w}</li>
                 ))}
@@ -797,7 +1167,7 @@ export function ImportReview({
             </Alert>
           )}
 
-          {/* Detected Subject Column Mapping & Editable Subject Names (Section 9, 10, 11 & 13) */}
+          {/* Subject Review Cards (Requirement #17 & #18) */}
           {(() => {
             const subjectMatches = draft.mapping.matches.filter((m) => {
               const col = draft.columns.find((c) => c.index === m.columnIndex);
@@ -810,7 +1180,7 @@ export function ImportReview({
                   <h3 className="text-sm font-bold text-slate-900">{t('photoImport.detectedSubjectsTitle')}</h3>
                   <p className="text-xs text-slate-500 mt-0.5">
                     {isHomeMode && saveOption === 'create'
-                      ? 'Detected subject columns from photo. Edit final subject names before saving.'
+                      ? 'Edit final subject names before saving.'
                       : 'Map detected photo columns to existing class subjects.'}
                   </p>
                 </div>
@@ -822,31 +1192,32 @@ export function ImportReview({
                       <div
                         key={m.columnIndex}
                         className={cx(
-                          'rounded-lg border p-3 space-y-2',
-                          m.subjectId && !m.needsReview ? 'border-slate-200 bg-slate-50' : 'border-amber-300 bg-amber-50',
+                          'rounded-xl border p-3.5 space-y-2.5 shadow-xs',
+                          m.subjectId && !m.needsReview ? 'border-slate-200 bg-slate-50/70' : 'border-amber-300 bg-amber-50/70',
                         )}
                       >
-                        <div className="flex items-center justify-between text-xs font-semibold text-slate-700">
-                          <span className="flex items-center gap-1 truncate" title={m.header}>
+                        <div className="text-xs font-bold text-slate-700">
+                          <span className="block text-[10px] text-slate-400 uppercase tracking-wider">{t('photoImport.detectedFromPhoto')}</span>
+                          <span className="flex items-center gap-1 mt-0.5 truncate" title={m.header}>
                             {m.subjectId && !m.needsReview ? (
                               <CheckIcon className="size-3.5 text-pass-700 shrink-0" />
                             ) : (
                               <WarnIcon className="size-3.5 text-amber-700 shrink-0" />
                             )}
-                            <span>Detected: "{m.header}"</span>
+                            <span className="text-sm font-bold text-slate-900">"{m.header}"</span>
                           </span>
                         </div>
 
-                        {/* Mode A: Create New Class — Editable Subject Name Input (Section 11A) */}
+                        {/* Mode A: Create New Class — Editable Subject Name Input (Requirement #17) */}
                         {isCreatingNew && m.subjectId && matchedSubject && (
                           <div>
                             <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1">
-                              Final Subject Name
+                              {t('photoImport.finalSubjectName')}
                             </label>
                             <input
                               type="text"
                               aria-label={`Subject name for ${m.header}`}
-                              className="field-input !py-1.5 !px-2.5 !text-xs font-medium"
+                              className="field-input min-h-[44px] !py-1.5 !px-2.5 text-sm font-bold"
                               value={matchedSubject.name}
                               onChange={(e) => {
                                 const newName = e.target.value;
@@ -856,15 +1227,15 @@ export function ImportReview({
                           </div>
                         )}
 
-                        {/* Mode B: Import into Existing Class — Mapping Dropdown (Section 11B) */}
+                        {/* Mode B: Import into Existing Class — Mapping Dropdown (Requirement #18) */}
                         {!isCreatingNew && (
                           <div>
                             <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1">
-                              Map to Existing Subject
+                              {t('photoImport.mapToExistingSubject')}
                             </label>
                             <select
                               aria-label={m.header}
-                              className="field-input !py-1.5 !text-xs"
+                              className="field-input min-h-[44px] !py-1.5 text-xs font-semibold"
                               value={m.subjectId ?? ''}
                               onChange={(e) => onChange((d) => remapColumn(d, detail, m.columnIndex, e.target.value || null))}
                             >
@@ -885,12 +1256,7 @@ export function ImportReview({
             );
           })()}
 
-          <p className="flex items-start gap-2 text-xs text-slate-600">
-            <WarnIcon className="mt-px size-4 shrink-0 text-amber-600" />
-            {t('photoImport.legend')}
-          </p>
-
-          {/* Student Table Groups */}
+          {/* Student Cards / Table Groups */}
           {draft.rows.length === 0 && <Alert tone="info">{t('photoImport.noRowsLeft')}</Alert>}
           {renderGroup('boys')}
           {renderGroup('girls')}
@@ -900,28 +1266,80 @@ export function ImportReview({
 
       {saveMessage && <Alert tone={saveMessage.tone}>{saveMessage.text}</Alert>}
 
-      {/* Sticky Bottom Actions */}
-      <div className="sticky bottom-0 -mx-4 flex flex-col-reverse gap-2 border-t border-slate-200 bg-white/95 px-4 py-3 backdrop-blur sm:mx-0 sm:flex-row sm:justify-end sm:rounded-b-xl z-20">
-        <Button variant="secondary" size="lg" icon={<RefreshIcon className="size-5" />} onClick={onTryAgain} disabled={saving} id="import-try-again">
-          {t('photoImport.tryAgain')}
-        </Button>
-        <Button
-          size="lg"
-          icon={<CheckIcon />}
-          loading={saving}
-          disabled={draft.rows.length === 0}
-          onClick={() => void handleConfirm()}
-          id="import-confirm-save"
-        >
-          {saving
-            ? t('photoImport.savingImport')
-            : isHomeMode && saveOption === 'create'
-              ? t('photoImport.createNewClassOption')
-              : t('photoImport.confirmAndSave')}
-        </Button>
+      {/* Sticky Bottom Actions Bar (Requirement #26) */}
+      <div className="sticky bottom-0 -mx-3 border-t border-slate-200 bg-white/95 px-4 py-3 backdrop-blur shadow-lg z-30 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+        <div className="mx-auto flex flex-col-reverse sm:flex-row sm:justify-end gap-2.5 max-w-7xl">
+          <Button
+            variant="secondary"
+            size="lg"
+            icon={<RefreshIcon className="size-5" />}
+            onClick={onTryAgain}
+            disabled={saving}
+            id="import-try-again"
+            className="w-full sm:w-auto min-h-[48px] justify-center"
+          >
+            {t('photoImport.tryAgain')}
+          </Button>
+          <Button
+            size="lg"
+            icon={<CheckIcon />}
+            loading={saving}
+            disabled={draft.rows.length === 0}
+            onClick={() => void handleConfirm()}
+            id="import-confirm-save"
+            className="w-full sm:w-auto min-h-[48px] font-bold text-base justify-center bg-brand-700 hover:bg-brand-800 text-white shadow-md"
+          >
+            {saving
+              ? savingProgressText || t('photoImport.savingImport')
+              : isHomeMode && saveOption === 'create'
+                ? t('photoImport.createNewClassOption')
+                : t('photoImport.confirmAndSave')}
+          </Button>
+        </div>
       </div>
 
-      {/* Interactive Image Cell Verification Modal (Section 16) */}
+      {/* Lightbox Photo View Modal (Requirement #14) */}
+      {lightboxOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 p-3 sm:p-6 backdrop-blur-xs">
+          <div className="relative max-h-[95vh] max-w-5xl w-full flex flex-col items-center">
+            <button
+              type="button"
+              onClick={() => setLightboxOpen(false)}
+              className="absolute top-2 right-2 z-10 rounded-full bg-slate-800/90 p-2 text-white hover:bg-slate-700 focus:outline-none min-h-[44px] min-w-[44px] flex items-center justify-center shadow-lg"
+              aria-label={t('photoImport.closeLightbox')}
+            >
+              <XIcon className="size-6" />
+            </button>
+            <img
+              src={image.previewUrl}
+              alt={t('photoImport.originalPhoto')}
+              className="max-h-[90vh] w-full object-contain rounded-lg shadow-2xl"
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Student Deletion Confirmation Modal (Requirement #25) */}
+      <ConfirmDialog
+        open={toDeleteRow !== null}
+        title={t('photoImport.confirmDeleteStudentTitle')}
+        confirmLabel={t('common.delete')}
+        danger
+        onCancel={() => setToDeleteRow(null)}
+        onConfirm={() => {
+          if (toDeleteRow) deleteRow(toDeleteRow.key);
+          setToDeleteRow(null);
+        }}
+      >
+        <p>{t('photoImport.confirmDeleteStudentBody')}</p>
+        {toDeleteRow && (
+          <p className="mt-2 text-xs font-bold text-slate-800 bg-slate-100 p-2 rounded">
+            Roll {toDeleteRow.roll || '?'} ({toDeleteRow.category === 'boys' ? t('student.boys') : t('student.girls')}) — {toDeleteRow.name || 'Unnamed'}
+          </p>
+        )}
+      </ConfirmDialog>
+
+      {/* Interactive Image Cell Verification Modal */}
       {cropTarget && (
         <SourceCropModal
           image={image}

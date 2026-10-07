@@ -61,8 +61,8 @@ export function DashboardPage() {
           <p className="mt-1 text-sm text-slate-500">{t('dashboard.subtitle')}</p>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[auto_auto_1fr] sm:items-end">
-          <LinkButton href={paths.newClass()} variant="primary" size="lg" icon={<PlusIcon />} id="create-class-button">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+          <LinkButton href={paths.newClass()} variant="primary" size="lg" icon={<PlusIcon />} id="create-class-button" className="w-full sm:w-auto min-h-[48px] justify-center">
             {t('dashboard.createNewClass')}
           </LinkButton>
 
@@ -72,19 +72,19 @@ export function DashboardPage() {
             icon={<CameraIcon className="size-5 text-brand-700" />}
             onClick={() => setShowHomeImportModal(true)}
             id="home-import-photo-button"
-            className="border-brand-300 bg-brand-50/50 hover:bg-brand-100/60 font-semibold"
+            className="w-full sm:w-auto min-h-[48px] justify-center border-brand-300 bg-brand-50/50 hover:bg-brand-100/60 font-semibold"
           >
             📷 {t('photoImport.homeImportButton')}
           </Button>
 
           {classes.length > 0 && (
-            <div className="sm:max-w-sm">
-              <label htmlFor="select-class" className="mb-1.5 block text-sm font-medium text-slate-700">
+            <div className="w-full sm:max-w-xs sm:ml-auto">
+              <label htmlFor="select-class" className="mb-1 block text-xs font-semibold uppercase tracking-wider text-slate-600">
                 {t('dashboard.selectExistingClass')}
               </label>
               <select
                 id="select-class"
-                className="field-input"
+                className="field-input min-h-[44px]"
                 value=""
                 onChange={(e) => e.target.value && navigate(paths.classPage(e.target.value))}
               >

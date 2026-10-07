@@ -362,6 +362,61 @@ export const ml: Translations = {
     errorMissingApiKey: 'ഫോട്ടോ ഇറക്കുമതി ഇതുവരെ സജ്ജമാക്കിയിട്ടില്ല. സെർവറിൽ AI കീ ക്രമീകരിക്കാൻ അഡ്മിനിസ്ട്രേറ്ററോട് ആവശ്യപ്പെടുക.',
     errorUnavailable: 'വിശകലന സേവനം ഇപ്പോൾ ലഭ്യമല്ല. അല്പസമയത്തിനു ശേഷം വീണ്ടും ശ്രമിക്കുക.',
     errorRateLimited: 'വളരെയധികം അഭ്യർത്ഥനകൾ. ഒരു മിനിറ്റ് കാത്തിരുന്ന് വീണ്ടും ശ്രമിക്കുക.',
+
+    /* Mobile Guidance & Camera UX */
+    guidanceTitle: 'മാർക്ക് ലിസ്റ്റിന്റെ വ്യക്തമായ ഫോട്ടോ എടുക്കുക.',
+    guidanceKeepVisible: 'മുഴുവൻ പേജും വ്യക്തമായി കാണണം',
+    guidanceHoldStraight: 'ഫോൺ നേരെ പിടിക്കുക',
+    guidanceMakeReadable: 'മാർക്കുകൾ വ്യക്തമായി വായിക്കാൻ കഴിയണം',
+    guidanceGoodLighting: 'നല്ല വെളിച്ചത്തിൽ ഫോട്ടോ എടുക്കുക',
+    guidanceAvoidGlare: 'നിഴലുകളും വെളിച്ചത്തിന്റെ പ്രതിഫലനവും ഒഴിവാക്കുക',
+
+    /* Differentiated Errors */
+    errBlurryTitle: 'ഫോട്ടോ വ്യക്തമല്ല',
+    errBlurryDesc: 'മാർക്കുകൾ വായിക്കാൻ കഴിയാത്തത്ര മങ്ങിയതാണ് ഫോട്ടോ.',
+    errPartMissingTitle: 'മാർക്ക് ലിസ്റ്റ് പൂർണ്ണമല്ല',
+    errPartMissingDesc: 'മാർക്ക് ലിസ്റ്റിന്റെ ചില ഭാഗങ്ങൾ മുറിഞ്ഞുപോയിട്ടുണ്ട് അല്ലെങ്കിൽ പട്ടിക കണ്ടെത്താനായില്ല.',
+    errNetworkTitle: 'കണക്ഷൻ തടസ്സപ്പെട്ടു',
+    errNetworkDesc: 'ഫോട്ടോ വിശകലനം ചെയ്യുന്നതിനിടയിൽ നെറ്റ്‌വർക്ക് ബന്ധം വേർപെട്ടു.',
+    errServerTitle: 'സേവനം ലഭ്യമായില്ല',
+    errServerDesc: 'ഫോട്ടോ വിശകലനം ചെയ്യാൻ കഴിഞ്ഞില്ല. ദയവായി വീണ്ടും ശ്രമിക്കുക.',
+    errUnsupportedTitle: 'പിന്തുണയ്ക്കാത്ത ചിത്രം',
+    errUnsupportedDesc: 'ഈ ചിത്രം പരിശോധിക്കാൻ കഴിയില്ല. JPG, PNG അല്ലെങ്കിൽ WebP ഫോട്ടോ ഉപയോഗിക്കുക.',
+    retakePhoto: 'വീണ്ടും ഫോട്ടോ എടുക്കുക',
+    chooseAnotherPhoto: 'മറ്റൊരു ഫോട്ടോ തിരഞ്ഞെടുക്കുക',
+
+    /* Stepper */
+    stepPhoto: '1 ഫോട്ടോ',
+    stepDetails: '2 വിവരങ്ങൾ',
+    stepSubjects: '3 വിഷയങ്ങൾ',
+    stepStudents: '4 വിദ്യാർത്ഥികൾ',
+    stepSave: '5 സേവ്',
+
+    /* Lightbox & Preview */
+    viewFullImage: 'മുഴുവൻ ഫോട്ടോയും കാണുക',
+    viewFullImageArrow: 'മുഴുവൻ ഫോട്ടോയും കാണുക →',
+    closeLightbox: 'ഫോട്ടോ അടയ്ക്കുക',
+    photoLooksGood: 'ഫോട്ടോ വ്യക്തമാണോ?',
+
+    /* Save Progress & Success */
+    savingStepCreatingClass: 'ക്ലാസ് ഉണ്ടാക്കുന്നു...',
+    savingStepCreatingSubjects: 'വിഷയങ്ങൾ ക്രമീകരിക്കുന്നു...',
+    savingStepSavingStudents: 'വിദ്യാർത്ഥികളുടെ മാർക്കുകൾ സേവ് ചെയ്യുന്നു...',
+    savingStepFinishing: 'പൂർത്തിയാക്കുന്നു...',
+    importSuccessTitle: 'മാർക്ക് ലിസ്റ്റ് തയാറായി',
+    importSuccessCount: '{count} വിദ്യാർത്ഥികളുടെ വിവരങ്ങൾ ചേർത്തു',
+    importSuccessBreakdown: '{boys} ആൺകുട്ടികൾ • {girls} പെൺകുട്ടികൾ • {subjects} വിഷയങ്ങൾ',
+    openCreatedClass: 'മാർക്ക് ലിസ്റ്റ് തുറക്കുക',
+
+    /* Cards & Actions */
+    addBoy: 'ആൺകുട്ടിയെ ചേർക്കുക',
+    addGirl: 'പെൺകുട്ടിയെ ചേർക്കുക',
+    confirmDeleteStudentTitle: 'ഈ വിദ്യാർത്ഥിയെ ഒഴിവാക്കണമോ?',
+    confirmDeleteStudentBody: 'ഇറക്കുമതി വിവരങ്ങളിൽ നിന്ന് ഈ വിദ്യാർത്ഥിയെ ഒഴിവാക്കാൻ ഉറപ്പാണോ?',
+    detectedFromPhoto: 'ഫോട്ടോയിൽ നിന്ന് കണ്ടെത്തിയത്',
+    finalSubjectName: 'വിഷയത്തിന്റെ പേര്',
+    mapToExistingSubject: 'നിലവിലുള്ള വിഷയത്തിലേക്ക് ചേർക്കുക',
+    includeSubject: 'വിഷയം ഉൾപ്പെടുത്തുക',
   },
 
   errors: {

@@ -153,18 +153,17 @@ export function PrintPage({ classId, examId }: { classId: string; examId?: strin
 
   return (
     <div className="min-h-screen bg-slate-100 pb-12">
-      {/* On-screen controls */}
-      <header className="no-print sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur px-4 py-3 shadow-xs">
-        <div className="mx-auto flex max-w-5xl items-center justify-between gap-4">
-          <LinkButton href={paths.classPage(schoolClass.id, examination.id)} variant="ghost" size="sm" icon={<ArrowLeftIcon />}>
+      <header className="no-print sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur px-3 py-3 shadow-xs">
+        <div className="mx-auto flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between max-w-5xl">
+          <LinkButton href={paths.classPage(schoolClass.id, examination.id)} variant="ghost" size="sm" icon={<ArrowLeftIcon />} className="min-h-[40px] w-fit">
             {t('class.backToMarkList')}
           </LinkButton>
 
-          <div className="flex items-center gap-3">
-            <label className="flex items-center gap-2 text-xs font-semibold text-slate-700">
+          <div className="flex flex-wrap items-center gap-2 justify-between sm:justify-end">
+            <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 min-h-[44px]">
               {t('print.orientation')}
               <select
-                className="rounded border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-800"
+                className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-800 min-h-[40px]"
                 value={orientation}
                 onChange={(e) => setOrientation(e.target.value as 'portrait' | 'landscape')}
               >
@@ -180,11 +179,12 @@ export function PrintPage({ classId, examId }: { classId: string; examId?: strin
               onClick={() => void handleSavePdf()}
               disabled={isGeneratingPdf}
               id="save-as-pdf-btn"
+              className="min-h-[44px] justify-center flex-1 sm:flex-initial"
             >
               {isGeneratingPdf ? t('print.generatingPdf') : t('print.saveAsPdf')}
             </Button>
 
-            <Button variant="secondary" size="md" icon={<PrintIcon />} onClick={handlePrint} id="print-now-btn">
+            <Button variant="secondary" size="md" icon={<PrintIcon />} onClick={handlePrint} id="print-now-btn" className="min-h-[44px] justify-center flex-1 sm:flex-initial">
               {t('print.printNow')}
             </Button>
           </div>
