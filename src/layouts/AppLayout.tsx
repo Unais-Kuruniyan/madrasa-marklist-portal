@@ -2,12 +2,18 @@ import type { ReactNode } from 'react';
 import { paths } from '../hooks/useHashRoute';
 import { useTranslation } from '../i18n/context';
 import { LanguageToggle } from '../components/ui/LanguageToggle';
+import { OfflineIndicator } from '../components/pwa/OfflineIndicator';
+import { PWAInstallPrompt } from '../components/pwa/PWAInstallPrompt';
+import { PWAUpdatePrompt } from '../components/pwa/PWAUpdatePrompt';
 
 export function AppLayout({ children }: { children: ReactNode }) {
   const { t } = useTranslation();
 
   return (
     <div className="flex min-h-dvh flex-col">
+      <OfflineIndicator />
+      <PWAInstallPrompt />
+      <PWAUpdatePrompt />
       <a
         href="#main"
         className="sr-only focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:z-50 focus:rounded-md focus:bg-white focus:px-3 focus:py-2 focus:text-sm focus:font-semibold focus:shadow"
