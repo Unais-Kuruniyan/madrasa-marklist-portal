@@ -158,7 +158,7 @@ export function StudentTable({ config, students, summary, onEditStudent, onDelet
               type="button"
               onClick={() => setFilter(f.key)}
               className={cx(
-                'rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors',
+                'rounded-lg px-3 py-2 text-xs font-semibold transition-colors min-h-[38px] flex items-center justify-center',
                 filter === f.key
                   ? 'bg-slate-900 text-white shadow-xs'
                   : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200',

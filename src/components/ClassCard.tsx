@@ -82,19 +82,21 @@ export function ClassCard({ item, onDelete }: ClassCardProps) {
         <div className="h-full rounded-full bg-brand-500 transition-all" style={{ width: `${progress}%` }} />
       </div>
 
-      <div className="mt-5 grid grid-cols-[1fr_auto_auto_auto] gap-2">
-        <LinkButton href={paths.classPage(item.id, latestExam?.id)} variant="primary" id={`open-class-${item.id}`}>
+      <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:items-center">
+        <LinkButton href={paths.classPage(item.id, latestExam?.id)} variant="primary" id={`open-class-${item.id}`} className="w-full sm:flex-1 min-h-[44px] justify-center">
           {t('class.openMarkList')}
         </LinkButton>
-        <LinkButton href={paths.print(item.id, latestExam?.id)} variant="secondary" aria-label={t('class.printTooltip')} title={t('class.printTooltip')} id={`print-class-${item.id}`} className="px-3">
-          <PrintIcon />
-        </LinkButton>
-        <LinkButton href={paths.editClass(item.id)} variant="secondary" aria-label={t('class.editTooltip')} title={t('class.editTooltip')} id={`edit-class-${item.id}`} className="px-3">
-          <EditIcon />
-        </LinkButton>
-        <Button variant="secondary" onClick={() => onDelete(item)} aria-label={t('class.deleteTooltip')} title={t('class.deleteTooltip')} id={`delete-class-${item.id}`} className="px-3 text-fail-700">
-          <TrashIcon />
-        </Button>
+        <div className="flex items-center gap-2 justify-between sm:justify-end shrink-0">
+          <LinkButton href={paths.print(item.id, latestExam?.id)} variant="secondary" aria-label={t('class.printTooltip')} title={t('class.printTooltip')} id={`print-class-${item.id}`} className="flex-1 sm:flex-initial min-h-[44px] min-w-[44px] px-3 justify-center">
+            <PrintIcon />
+          </LinkButton>
+          <LinkButton href={paths.editClass(item.id)} variant="secondary" aria-label={t('class.editTooltip')} title={t('class.editTooltip')} id={`edit-class-${item.id}`} className="flex-1 sm:flex-initial min-h-[44px] min-w-[44px] px-3 justify-center">
+            <EditIcon />
+          </LinkButton>
+          <Button variant="secondary" onClick={() => onDelete(item)} aria-label={t('class.deleteTooltip')} title={t('class.deleteTooltip')} id={`delete-class-${item.id}`} className="flex-1 sm:flex-initial min-h-[44px] min-w-[44px] px-3 justify-center text-fail-700">
+            <TrashIcon />
+          </Button>
+        </div>
       </div>
     </article>
   );

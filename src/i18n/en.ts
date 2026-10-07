@@ -360,6 +360,61 @@ export const en = {
     errorMissingApiKey: 'Photo import is not set up yet. The administrator needs to configure the AI key on the server.',
     errorUnavailable: 'The analysis service is not available right now. Please try again in a moment.',
     errorRateLimited: 'Too many requests. Please wait a minute and try again.',
+    
+    /* Mobile Guidance & Camera UX */
+    guidanceTitle: 'Take a photo of the full mark list.',
+    guidanceKeepVisible: 'Keep the entire page visible',
+    guidanceHoldStraight: 'Hold the phone straight',
+    guidanceMakeReadable: 'Make sure marks are readable',
+    guidanceGoodLighting: 'Use good lighting',
+    guidanceAvoidGlare: 'Avoid glare and shadows',
+
+    /* Differentiated Errors */
+    errBlurryTitle: 'The photo is too blurry',
+    errBlurryDesc: 'The photo is too blurry to read the marks clearly.',
+    errPartMissingTitle: 'Full mark list is not visible',
+    errPartMissingDesc: 'Part of the page is cut off or no table was detected in the photo.',
+    errNetworkTitle: 'Connection Interrupted',
+    errNetworkDesc: 'Network connection was interrupted while uploading or analyzing.',
+    errServerTitle: 'Service Unavailable',
+    errServerDesc: 'We couldn\'t process the photo right now. Please try again.',
+    errUnsupportedTitle: 'Unsupported Image Format',
+    errUnsupportedDesc: 'This image format cannot be processed. Use JPG, PNG or WebP.',
+    retakePhoto: 'Retake Photo',
+    chooseAnotherPhoto: 'Choose Another Photo',
+
+    /* Stepper */
+    stepPhoto: '1 Photo',
+    stepDetails: '2 Details',
+    stepSubjects: '3 Subjects',
+    stepStudents: '4 Students',
+    stepSave: '5 Save',
+
+    /* Lightbox & Preview */
+    viewFullImage: 'View full image',
+    viewFullImageArrow: 'View full image →',
+    closeLightbox: 'Close photo preview',
+    photoLooksGood: 'Photo looks good?',
+
+    /* Save Progress & Success */
+    savingStepCreatingClass: 'Creating class...',
+    savingStepCreatingSubjects: 'Creating subjects...',
+    savingStepSavingStudents: 'Saving students...',
+    savingStepFinishing: 'Finishing...',
+    importSuccessTitle: 'Mark List Created',
+    importSuccessCount: '{count} students imported',
+    importSuccessBreakdown: '{boys} Boys • {girls} Girls • {subjects} subjects',
+    openCreatedClass: 'Open Mark List',
+
+    /* Cards & Actions */
+    addBoy: 'Add Boy',
+    addGirl: 'Add Girl',
+    confirmDeleteStudentTitle: 'Delete this student?',
+    confirmDeleteStudentBody: 'Are you sure you want to delete this student record from the import?',
+    detectedFromPhoto: 'Detected from photo',
+    finalSubjectName: 'Final Subject Name',
+    mapToExistingSubject: 'Map to existing subject',
+    includeSubject: 'Include subject',
   },
 
   errors: {

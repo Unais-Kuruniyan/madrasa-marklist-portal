@@ -19,16 +19,16 @@ export function AppLayout({ children }: { children: ReactNode }) {
         {t('nav.skipToContent')}
       </a>
       <header className="no-print sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/85">
-        <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4 sm:px-6">
-          <a href={paths.dashboard()} className="flex items-center gap-2.5 rounded-md font-semibold text-slate-900" id="nav-home">
-            <span className="flex size-8 items-center justify-center rounded-lg bg-brand-800 text-white">
+        <div className="mx-auto flex h-14 max-w-6xl items-center justify-between gap-3 px-3 sm:px-6">
+          <a href={paths.dashboard()} className="flex items-center gap-2 rounded-md font-bold text-slate-900 min-w-0 py-1" id="nav-home">
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-brand-800 text-white shadow-xs">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-4.5" aria-hidden="true">
                 <path d="M14 3v4a1 1 0 0 0 1 1h4" />
                 <path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2Z" />
                 <path d="M9 13h6M9 17h4" />
               </svg>
             </span>
-            <span className="text-base sm:text-lg">{t('common.appName')}</span>
+            <span className="text-sm sm:text-lg font-bold text-slate-900 truncate leading-tight">{t('common.appName')}</span>
           </a>
 
           <LanguageToggle />

@@ -310,7 +310,7 @@ export function StudentForm({ detail, editing, onSaved, onCancelEdit }: StudentF
         </div>
       </div>
 
-      <div className="grid grid-cols-[6.5rem_1fr] gap-3">
+      <div className="grid grid-cols-[5.5rem_1fr] sm:grid-cols-[6.5rem_1fr] gap-3">
         <div>
           <label htmlFor="student-roll" className="mb-1 block text-sm font-medium text-slate-700">
             {t('student.rollNumber')} ({category === 'boys' ? t('student.boys') : t('student.girls')})
