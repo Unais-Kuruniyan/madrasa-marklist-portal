@@ -240,7 +240,7 @@ export function PrintPage({ classId, examId }: { classId: string; examId?: strin
                 <thead>
                   <tr>
                     <th style={{ width: '50px' }}>{t('student.rollNumber')}</th>
-                    <th style={{ textAlign: 'center', minWidth: '140px' }}>{t('student.name')}</th>
+                    <th style={{ textAlign: 'center', minWidth: '150px' }}>{t('student.name')}</th>
                     {config.normalSubjects.map((s) => (
                       <th key={s.id} style={{ minWidth: '65px' }}>
                         {s.name}

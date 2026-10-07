@@ -4,6 +4,10 @@ import { ImportError, type AnalyzeRequest, type AnalyzeResponse, type Extraction
 const ENDPOINT = '/api/import-marklist';
 
 export async function analyzeMarkList(request: AnalyzeRequest, signal?: AbortSignal): Promise<ExtractionResult> {
+  if (!navigator.onLine) {
+    throw new ImportError('unavailable');
+  }
+
   let response: Response;
   try {
     response = await fetch(ENDPOINT, {
