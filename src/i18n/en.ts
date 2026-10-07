@@ -426,6 +426,22 @@ export const en = {
     permissionDenied: 'Database permission denied.',
     generic: 'Something went wrong. Please try again.',
   },
+
+  pwa: {
+    installTitle: 'Install Mark List',
+    installDesc: 'Use School Mark List Portal like an app on your device.',
+    installBtn: 'Install App',
+    notNow: 'Not now',
+    appInstalled: 'App Installed',
+    offlineTitle: 'You\'re offline',
+    offlineDesc: 'Some features require an internet connection.',
+    backOnline: 'Back online',
+    updateAvailable: 'A new version is available.',
+    updateBtn: 'Update',
+    dismiss: 'Dismiss',
+    internetRequiredSave: 'Internet connection required to save. Please reconnect and try again.',
+    internetRequiredAnalyze: 'Internet connection required to analyze mark list photo.',
+  },
 };
 
 export type Translations = typeof en;

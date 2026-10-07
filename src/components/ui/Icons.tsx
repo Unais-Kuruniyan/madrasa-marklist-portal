@@ -97,3 +97,26 @@ export const WarnIcon = (p: IconProps) => (
     <path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" />
   </Base>
 );
+export const WifiOffIcon = (p: IconProps) => (
+  <Base {...p}>
+    <line x1="2" y1="2" x2="22" y2="22" />
+    <path d="M8.5 8.5A6 6 0 0 1 12 8c2.1 0 4.1.8 5.6 2.3" />
+    <path d="M5 5A12 12 0 0 1 12 3c3.5 0 6.8 1.4 9.2 3.8" />
+    <path d="M10.6 14.6a2 2 0 0 1 2.8 0" />
+    <line x1="12" y1="18" x2="12.01" y2="18" />
+  </Base>
+);
+export const WifiIcon = (p: IconProps) => (
+  <Base {...p}>
+    <path d="M5 12.55a11 11 0 0 1 14.08 0" />
+    <path d="M1.42 9a16 16 0 0 1 21.16 0" />
+    <path d="M8.53 16.11a6 6 0 0 1 6.95 0" />
+    <line x1="12" y1="20" x2="12.01" y2="20" />
+  </Base>
+);
+export const SmartphoneIcon = (p: IconProps) => (
+  <Base {...p}>
+    <rect x="5" y="2" width="14" height="20" rx="2" ry="2" />
+    <path d="M12 18h.01" />
+  </Base>
+);
