@@ -139,16 +139,16 @@ export function ClassPage({ classId, examId }: { classId: string; examId?: strin
     <div className="space-y-6">
       {/* Header Navigation & Class/Exam Info */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between border-b border-slate-200 pb-5">
-        <div>
+        <div className="min-w-0">
           <a
             href={paths.dashboard()}
-            className="mb-2 inline-flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-slate-900"
+            className="mb-2 inline-flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-slate-900 min-h-[36px]"
           >
             <ArrowLeftIcon className="size-3.5" /> {t('class.allClasses')}
           </a>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">{schoolClass.className}</h1>
+          <h1 className="text-xl sm:text-3xl font-bold tracking-tight text-slate-900 break-words">{schoolClass.className}</h1>
           {schoolClass.institutionName && (
-            <p className="text-sm font-medium text-slate-700">
+            <p className="text-xs sm:text-sm font-medium text-slate-700 break-words mt-1">
               {schoolClass.institutionName}
               {schoolClass.institutionLocation ? `, ${schoolClass.institutionLocation}` : ''}
               {schoolClass.rangeName ? ` | ${t('common.range')}: ${schoolClass.rangeName}` : ''}
@@ -157,13 +157,13 @@ export function ClassPage({ classId, examId }: { classId: string; examId?: strin
 
           {/* Exam Selector Dropdown */}
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <div className="flex items-center gap-2">
-              <label htmlFor="select-exam" className="text-xs font-bold uppercase text-slate-500">
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <label htmlFor="select-exam" className="text-xs font-bold uppercase text-slate-500 shrink-0">
                 {t('class.examSelectLabel')}
               </label>
               <select
                 id="select-exam"
-                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-bold text-brand-900 shadow-xs"
+                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-bold text-brand-900 shadow-xs min-h-[44px] w-full sm:w-auto"
                 value={examination.id}
                 onChange={(e) => {
                   window.location.hash = paths.classPage(schoolClass.id, e.target.value);
@@ -177,23 +177,24 @@ export function ClassPage({ classId, examId }: { classId: string; examId?: strin
               </select>
             </div>
 
-            <Button variant="secondary" size="sm" icon={<PlusIcon />} onClick={() => setShowNewExamModal(true)}>
+            <Button variant="secondary" size="sm" icon={<PlusIcon />} onClick={() => setShowNewExamModal(true)} className="min-h-[44px]">
               {t('class.newExamButton')}
             </Button>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto shrink-0">
           <LinkButton
             href={paths.print(schoolClass.id, examination.id)}
             variant="primary"
             size="md"
             icon={<PrintIcon />}
             id="print-marklist-btn"
+            className="flex-1 sm:flex-initial min-h-[44px] justify-center"
           >
             {t('common.printMarkList')}
           </LinkButton>
-          <LinkButton href={paths.editClass(schoolClass.id)} variant="secondary" size="md" icon={<EditIcon />} id="edit-class-btn">
+          <LinkButton href={paths.editClass(schoolClass.id)} variant="secondary" size="md" icon={<EditIcon />} id="edit-class-btn" className="flex-1 sm:flex-initial min-h-[44px] justify-center">
             {t('class.editClass')}
           </LinkButton>
         </div>
