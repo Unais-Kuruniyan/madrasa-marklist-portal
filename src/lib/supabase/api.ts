@@ -204,7 +204,11 @@ export async function getClassDetail(classId: string, examId?: string): Promise<
 /* Mutations                                                           */
 /* ------------------------------------------------------------------ */
 
-export async function saveClass(classId: string | null, input: ClassFormInput): Promise<{ classId: string; examId: string }> {
+export async function saveClass(
+  classId: string | null,
+  input: ClassFormInput,
+  existingExamId?: string | null,
+): Promise<{ classId: string; examId: string }> {
   const { data, error } = await getSupabase().rpc('save_class', {
     p_class_id: classId,
     p_institution_name: input.institutionName,
@@ -219,6 +223,12 @@ export async function saveClass(classId: string | null, input: ClassFormInput): 
   });
   if (error) throw error;
   const res = data as { class_id: string; exam_id: string };
+
+  if (classId && existingExamId) {
+    await saveExamination(classId, input.examName, input.examYear, existingExamId);
+    return { classId: res.class_id, examId: existingExamId };
+  }
+
   return { classId: res.class_id, examId: res.exam_id };
 }
 

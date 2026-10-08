@@ -70,9 +70,11 @@ function ClassForm({ detail }: { detail: ClassDetail | null }) {
   const isEdit = detail !== null;
   const remembered = useMemo(() => loadInstitution(), []);
 
-  const [institutionName, setInstitutionName] = useState(detail?.schoolClass.institutionName ?? remembered.name);
+  const [institutionName, setInstitutionName] = useState(
+    isEdit ? (detail.schoolClass.institutionName ?? '') : remembered.name,
+  );
   const [institutionLocation, setInstitutionLocation] = useState(
-    detail?.schoolClass.institutionLocation ?? remembered.location,
+    isEdit ? (detail.schoolClass.institutionLocation ?? '') : remembered.location,
   );
   const [rangeName, setRangeName] = useState(detail?.schoolClass.rangeName ?? '');
   const [className, setClassName] = useState(detail?.schoolClass.className ?? '');
@@ -93,6 +95,7 @@ function ClassForm({ detail }: { detail: ClassDetail | null }) {
   const [focusKey, setFocusKey] = useState<string | null>(null);
   const [errors, setErrors] = useState<FormErrors>({ subjectFields: {} });
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [pendingRemove, setPendingRemove] = useState<SubjectDraft | null>(null);
   const savingRef = useRef(false);
@@ -172,6 +175,7 @@ function ClassForm({ detail }: { detail: ClassDetail | null }) {
     e.preventDefault();
     if (savingRef.current) return;
     setSaveError(null);
+    setSuccessMessage(null);
 
     const result = validate();
     setErrors(result);
@@ -186,20 +190,29 @@ function ClassForm({ detail }: { detail: ClassDetail | null }) {
     savingRef.current = true;
     setSaving(true);
     try {
-      const res = await saveClass(detail?.schoolClass.id ?? null, {
-        institutionName: institutionName.trim(),
-        institutionLocation: institutionLocation.trim(),
-        rangeName: rangeName.trim(),
-        className: className.trim(),
-        examName: result.finalExamName,
-        examYear: result.parsedYear,
-        totalStudents: result.total,
-        includeQuranHifz,
-        subjects: subjects.map((s) => ({ id: s.id, name: s.name.trim() })),
-      });
+      const res = await saveClass(
+        detail?.schoolClass.id ?? null,
+        {
+          institutionName: institutionName.trim(),
+          institutionLocation: institutionLocation.trim(),
+          rangeName: rangeName.trim(),
+          className: className.trim(),
+          examName: result.finalExamName,
+          examYear: result.parsedYear,
+          totalStudents: result.total,
+          includeQuranHifz,
+          subjects: subjects.map((s) => ({ id: s.id, name: s.name.trim() })),
+        },
+        detail?.examination.id ?? null,
+      );
       saveInstitution({ name: institutionName.trim(), location: institutionLocation.trim() });
-      navigate(paths.classPage(res.classId, res.examId));
+      setSuccessMessage(isEdit ? t('class.updateSuccess') : t('class.createSuccess'));
+
+      setTimeout(() => {
+        navigate(paths.classPage(res.classId, res.examId));
+      }, 500);
     } catch (err) {
+      console.error('[ClassFormPage] Database update failed:', err);
       setSaveError(handleError(err, isEdit ? t('class.updateError') : t('class.createError')));
       savingRef.current = false;
       setSaving(false);
@@ -376,6 +389,7 @@ function ClassForm({ detail }: { detail: ClassDetail | null }) {
         </fieldset>
 
         {saveError && <Alert tone="error">{saveError}</Alert>}
+        {successMessage && <Alert tone="success">{successMessage}</Alert>}
 
         <div className="flex flex-col-reverse gap-3 pb-4 sm:flex-row sm:justify-end">
           <LinkButton href={isEdit ? paths.classPage(detail.schoolClass.id, detail.examination.id) : paths.dashboard()} variant="secondary" size="lg">
